@@ -592,28 +592,39 @@ function LoginScreen({ onDemo, onLogin }) {
 // ============================================================
 // ADD ASSET MODAL
 // ============================================================
-function AddAssetModal({ onClose, onAdd }) {
+function AddAssetModal({ onClose, onAdd, onEdit, asset }) {
+  const editMode = !!asset;
   const [form, setForm] = useState({
-    type: "stock", name: "", ticker: "",
-    quantity: "", buy_price: "", current_price: "", currency: "USD"
+    type: asset?.type ?? "stock",
+    name: asset?.name ?? "",
+    ticker: asset?.ticker ?? "",
+    quantity: asset?.quantity ?? "",
+    buy_price: asset?.buy_price ?? "",
+    current_price: asset?.current_price ?? "",
+    currency: asset?.currency ?? "USD",
   });
   const set = (k, v) => setForm(f => ({...f, [k]: v}));
 
   const handleSubmit = () => {
     if (!form.name || !form.quantity || !form.buy_price) return;
-    onAdd({
+    const fields = {
       ...form,
       quantity: parseFloat(form.quantity),
       buy_price: parseFloat(form.buy_price),
       current_price: parseFloat(form.current_price || form.buy_price),
-    });
+    };
+    if (editMode) {
+      onEdit(asset.id, fields);
+    } else {
+      onAdd(fields);
+    }
     onClose();
   };
 
   return (
     <div className="modal-overlay" onClick={e => e.target===e.currentTarget && onClose()}>
       <div className="modal">
-        <div className="modal-title">+ Nuevo Activo</div>
+        <div className="modal-title">{editMode ? "✏️ Editar Activo" : "+ Nuevo Activo"}</div>
         <div className="form-group">
           <label className="form-label">Tipo</label>
           <select className="form-select" value={form.type} onChange={e=>set("type",e.target.value)}>
@@ -658,7 +669,7 @@ function AddAssetModal({ onClose, onAdd }) {
         </div>
         <div className="modal-actions">
           <button className="btn-cancel" onClick={onClose}>Cancelar</button>
-          <button className="btn-primary" onClick={handleSubmit}>Guardar activo</button>
+          <button className="btn-primary" onClick={handleSubmit}>{editMode ? "Guardar cambios" : "Guardar activo"}</button>
         </div>
       </div>
     </div>
@@ -673,6 +684,7 @@ function Dashboard({ user, onLogout }) {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const [showModal, setShowModal] = useState(false);
+  const [editingAsset, setEditingAsset] = useState(null);
 
   const loadAssets = useCallback(async () => {
     setLoading(true);
@@ -700,6 +712,13 @@ function Dashboard({ user, onLogout }) {
     try {
       const saved = await sb.addAsset(asset);
       setAssets(prev => [saved, ...prev]);
+    } catch(e) { alert(e.message); }
+  };
+
+  const handleUpdate = async (id, fields) => {
+    try {
+      const updated = await sb.updateAsset(id, fields);
+      setAssets(prev => prev.map(a => a.id === id ? { ...a, ...updated } : a));
     } catch(e) { alert(e.message); }
   };
 
@@ -799,11 +818,18 @@ function Dashboard({ user, onLogout }) {
                     {roi >= 0 ? "▲" : "▼"} {fmt(Math.abs(roi))}%
                     &nbsp;({gain >= 0 ? "+" : ""}{fmtMoney(gain, asset.currency)})
                   </div>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleDelete(asset.id); }}
-                    style={{background:"none",border:"none",color:"var(--muted)",fontSize:16,cursor:"pointer",marginTop:4,padding:0}}
-                    title="Eliminar"
-                  >🗑</button>
+                  <div style={{display:"flex",gap:8,marginTop:4}}>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setEditingAsset(asset); }}
+                      style={{background:"none",border:"none",color:"var(--muted)",fontSize:16,cursor:"pointer",padding:0}}
+                      title="Editar"
+                    >✏️</button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDelete(asset.id); }}
+                      style={{background:"none",border:"none",color:"var(--muted)",fontSize:16,cursor:"pointer",padding:0}}
+                      title="Eliminar"
+                    >🗑</button>
+                  </div>
                 </div>
               </div>
             );
@@ -813,6 +839,7 @@ function Dashboard({ user, onLogout }) {
 
       <button className="btn-add" onClick={() => setShowModal(true)}>+</button>
       {showModal && <AddAssetModal onClose={() => setShowModal(false)} onAdd={handleAdd} />}
+      {editingAsset && <AddAssetModal asset={editingAsset} onClose={() => setEditingAsset(null)} onEdit={handleUpdate} />}
     </div>
   );
 }
