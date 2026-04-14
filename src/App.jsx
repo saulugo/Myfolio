@@ -603,7 +603,6 @@ function AddAssetModal({ onClose, onAdd }) {
     if (!form.name || !form.quantity || !form.buy_price) return;
     onAdd({
       ...form,
-      id: Date.now(),
       quantity: parseFloat(form.quantity),
       buy_price: parseFloat(form.buy_price),
       current_price: parseFloat(form.current_price || form.buy_price),
