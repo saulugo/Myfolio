@@ -754,6 +754,36 @@ function Dashboard({ user, onLogout }) {
   const [filter, setFilter] = useState("all");
   const [showModal, setShowModal] = useState(false);
   const [editingAsset, setEditingAsset] = useState(null);
+  const [displayCurrency, setDisplayCurrency] = useState(
+    () => localStorage.getItem("display_currency") || "USD"
+  );
+  const [fxRate, setFxRate] = useState(
+    () => parseFloat(localStorage.getItem("fx_rate")) || 1.17
+  );
+  const [fxInput, setFxInput] = useState(
+    () => localStorage.getItem("fx_rate") || "1.17"
+  );
+  const [editingFx, setEditingFx] = useState(false);
+
+  const toDisplay = (amount, assetCurrency = "USD") => {
+    if (!assetCurrency || assetCurrency === displayCurrency) return amount;
+    if (assetCurrency === "USD" && displayCurrency === "EUR") return amount / fxRate;
+    if (assetCurrency === "EUR" && displayCurrency === "USD") return amount * fxRate;
+    return amount;
+  };
+
+  const handleCurrencyToggle = (cur) => {
+    setDisplayCurrency(cur);
+    localStorage.setItem("display_currency", cur);
+  };
+
+  const handleFxUpdate = () => {
+    const rate = parseFloat(fxInput);
+    if (!rate || rate <= 0) return;
+    setFxRate(rate);
+    localStorage.setItem("fx_rate", rate.toString());
+    setEditingFx(false);
+  };
 
   const loadAssets = useCallback(async () => {
     setLoading(true);
@@ -769,12 +799,12 @@ function Dashboard({ user, onLogout }) {
 
   useEffect(() => { loadAssets(); }, [loadAssets]);
 
-  const totalCurrent = assets.reduce((s, a) => s + a.quantity * a.current_price, 0);
-  const totalInvested = assets.reduce((s, a) => s + a.quantity * a.buy_price, 0);
+  const totalCurrent = assets.reduce((s, a) => s + toDisplay(a.quantity * a.current_price, a.currency), 0);
+  const totalInvested = assets.reduce((s, a) => s + toDisplay(a.quantity * a.buy_price, a.currency), 0);
   const totalROI = totalInvested > 0 ? calcROI(totalInvested, totalCurrent) : 0;
   const totalGain = totalCurrent - totalInvested;
 
-  const typeTotal = (type) => assets.filter(a => a.type === type).reduce((s,a) => s + a.quantity * a.current_price, 0);
+  const typeTotal = (type) => assets.filter(a => a.type === type).reduce((s, a) => s + toDisplay(a.quantity * a.current_price, a.currency), 0);
   const filtered = filter === "all" ? assets : assets.filter(a => a.type === filter);
 
   const handleAdd = async (asset) => {
@@ -816,17 +846,54 @@ function Dashboard({ user, onLogout }) {
         {/* HERO */}
         <div className="hero">
           <div className="hero-label">Portafolio total</div>
-          <div className="hero-total">{loading ? "—" : fmtMoney(totalCurrent)}</div>
+          <div style={{display:"flex", alignItems:"center", gap:10, flexWrap:"wrap"}}>
+            <div className="hero-total">{loading ? "—" : fmtMoney(totalCurrent, displayCurrency)}</div>
+            <div style={{display:"flex", gap:4}}>
+              {["USD","EUR"].map(cur => (
+                <button key={cur} onClick={() => handleCurrencyToggle(cur)} style={{
+                  background: displayCurrency === cur ? "var(--green)" : "rgba(255,255,255,0.08)",
+                  color: displayCurrency === cur ? "#000" : "var(--muted)",
+                  border: "none", borderRadius: 6, padding: "3px 10px",
+                  fontSize: 11, fontWeight: 700, cursor: "pointer", letterSpacing: 1
+                }}>{cur}</button>
+              ))}
+            </div>
+          </div>
           <div className="hero-row">
             <span className={`badge-roi ${totalROI >= 0 ? "pos" : "neg"}`}>
               {totalROI >= 0 ? "▲" : "▼"} {fmt(Math.abs(totalROI))}%
             </span>
             <span className={`hero-invested ${totalGain >= 0 ? "pos" : "neg"}`}>
-              {totalGain >= 0 ? "+" : ""}{fmtMoney(totalGain)} ganancia total
+              {totalGain >= 0 ? "+" : ""}{fmtMoney(totalGain, displayCurrency)} ganancia total
             </span>
           </div>
           <div className="hero-invested" style={{marginTop:6}}>
-            Invertido: {fmtMoney(totalInvested)}
+            Invertido: {fmtMoney(totalInvested, displayCurrency)}
+          </div>
+          {/* TASA DE CAMBIO */}
+          <div style={{display:"flex", alignItems:"center", gap:6, marginTop:10, fontSize:12, color:"var(--muted)"}}>
+            <span>1 EUR =</span>
+            {editingFx ? (
+              <>
+                <input
+                  type="number" step="0.01" value={fxInput}
+                  onChange={e => setFxInput(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && handleFxUpdate()}
+                  style={{width:60, background:"var(--card)", border:"1px solid var(--accent)", color:"var(--fg)", borderRadius:4, padding:"2px 6px", fontSize:12}}
+                />
+                <span>USD</span>
+                <button onClick={handleFxUpdate} style={{background:"none",border:"none",color:"var(--green)",cursor:"pointer",fontSize:14,padding:0}}>✓</button>
+                <button onClick={() => setEditingFx(false)} style={{background:"none",border:"none",color:"var(--muted)",cursor:"pointer",fontSize:14,padding:0}}>✕</button>
+              </>
+            ) : (
+              <>
+                <span style={{color:"var(--fg)", fontWeight:600}}>{fxRate} USD</span>
+                <button onClick={() => { setFxInput(fxRate.toString()); setEditingFx(true); }}
+                  style={{background:"none",border:"none",color:"var(--muted)",cursor:"pointer",fontSize:12,padding:0}}>
+                  ✏️
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -844,7 +911,7 @@ function Dashboard({ user, onLogout }) {
               >
                 <div className="pill-icon">{meta.icon}</div>
                 <div className="pill-label">{meta.label}</div>
-                <div className="pill-value" style={{color: meta.color}}>{fmtMoney(val)}</div>
+                <div className="pill-value" style={{color: meta.color}}>{fmtMoney(val, displayCurrency)}</div>
                 <div className="pill-pct">{fmt(pct, 1)}% del total</div>
               </div>
             );
