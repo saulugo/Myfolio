@@ -630,7 +630,7 @@ function AddAssetModal({ onClose, onAdd }) {
           </div>
           <div className="form-group">
             <label className="form-label">Ticker / ID</label>
-            <input className="form-input" placeholder="AAPL" value={form.ticker} onChange={e=>set("ticker",e.target.value)} />
+            <input className="form-input" placeholder="AAPL" value={form.ticker} onChange={e=>set("ticker", e.target.value.toUpperCase().replace(/[^A-Z.\-]/g, ""))} />
           </div>
         </div>
         <div className="form-row">
