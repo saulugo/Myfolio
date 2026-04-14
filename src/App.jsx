@@ -602,16 +602,29 @@ function AddAssetModal({ onClose, onAdd, onEdit, asset }) {
     buy_price: asset?.buy_price ?? "",
     current_price: asset?.current_price ?? "",
     currency: asset?.currency ?? "USD",
+    // real estate specific
+    address: asset?.address ?? "",
+    rent: asset?.rent ?? "",
+    monthly_costs: asset?.monthly_costs ?? "",
+    purchase_date: asset?.purchase_date ?? "",
+    notes: asset?.notes ?? "",
   });
   const set = (k, v) => setForm(f => ({...f, [k]: v}));
+  const isRE = form.type === "real_estate";
 
   const handleSubmit = () => {
-    if (!form.name || !form.quantity || !form.buy_price) return;
+    if (!form.name || !form.buy_price) return;
+    if (!isRE && !form.quantity) return;
     const fields = {
       ...form,
-      quantity: parseFloat(form.quantity),
+      quantity: isRE ? 1 : parseFloat(form.quantity),
       buy_price: parseFloat(form.buy_price),
       current_price: parseFloat(form.current_price || form.buy_price),
+      ...(isRE && {
+        rent: parseFloat(form.rent) || 0,
+        monthly_costs: parseFloat(form.monthly_costs) || 0,
+        net_income: (parseFloat(form.rent) || 0) - (parseFloat(form.monthly_costs) || 0),
+      }),
     };
     if (editMode) {
       onEdit(asset.id, fields);
@@ -633,40 +646,96 @@ function AddAssetModal({ onClose, onAdd, onEdit, asset }) {
             <option value="real_estate">🏢 Inmobiliario</option>
           </select>
         </div>
+
+        {/* CAMPOS COMUNES */}
         <div className="form-row">
           <div className="form-group">
             <label className="form-label">Nombre</label>
-            <input className="form-input" placeholder="Apple Inc." value={form.name} onChange={e=>set("name",e.target.value)} />
+            <input className="form-input" placeholder={isRE ? "Apto. Madrid Centro" : "Apple Inc."} value={form.name} onChange={e=>set("name",e.target.value)} />
           </div>
-          <div className="form-group">
-            <label className="form-label">Ticker / ID</label>
-            <input className="form-input" placeholder="AAPL" value={form.ticker} onChange={e=>set("ticker", e.target.value.toUpperCase().replace(/[^A-Z.\-]/g, ""))} />
-          </div>
+          {!isRE && (
+            <div className="form-group">
+              <label className="form-label">Ticker / ID</label>
+              <input className="form-input" placeholder="AAPL" value={form.ticker} onChange={e=>set("ticker", e.target.value.toUpperCase().replace(/[^A-Z.\-]/g, ""))} />
+            </div>
+          )}
         </div>
-        <div className="form-row">
-          <div className="form-group">
-            <label className="form-label">Cantidad</label>
-            <input className="form-input" type="number" placeholder="10" value={form.quantity} onChange={e=>set("quantity",e.target.value)} />
+
+        {/* CAMPOS SÓLO PARA INMOBILIARIO */}
+        {isRE && (
+          <>
+            <div className="form-group">
+              <label className="form-label">Dirección</label>
+              <input className="form-input" placeholder="Calle Gran Vía 1, Madrid" value={form.address} onChange={e=>set("address",e.target.value)} />
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Renta mensual</label>
+                <input className="form-input" type="number" placeholder="1200" value={form.rent} onChange={e=>set("rent",e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Costes mensuales</label>
+                <input className="form-input" type="number" placeholder="300" value={form.monthly_costs} onChange={e=>set("monthly_costs",e.target.value)} />
+              </div>
+            </div>
+            {(form.rent || form.monthly_costs) && (
+              <div className="form-group">
+                <label className="form-label">Ingreso neto (calculado)</label>
+                <input className="form-input" readOnly value={`${((parseFloat(form.rent)||0) - (parseFloat(form.monthly_costs)||0)).toLocaleString()} / mes`} style={{opacity:0.7}} />
+              </div>
+            )}
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Fecha de compra</label>
+                <input className="form-input" type="date" value={form.purchase_date} onChange={e=>set("purchase_date",e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Moneda</label>
+                <select className="form-select" value={form.currency} onChange={e=>set("currency",e.target.value)}>
+                  <option value="EUR">EUR €</option>
+                  <option value="USD">USD $</option>
+                </select>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* CAMPOS SÓLO PARA NO INMOBILIARIO */}
+        {!isRE && (
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Cantidad</label>
+              <input className="form-input" type="number" placeholder="10" value={form.quantity} onChange={e=>set("quantity",e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Moneda</label>
+              <select className="form-select" value={form.currency} onChange={e=>set("currency",e.target.value)}>
+                <option value="USD">USD $</option>
+                <option value="EUR">EUR €</option>
+                <option value="MXN">MXN $</option>
+              </select>
+            </div>
           </div>
-          <div className="form-group">
-            <label className="form-label">Moneda</label>
-            <select className="form-select" value={form.currency} onChange={e=>set("currency",e.target.value)}>
-              <option value="USD">USD $</option>
-              <option value="EUR">EUR €</option>
-              <option value="MXN">MXN $</option>
-            </select>
-          </div>
-        </div>
+        )}
+
         <div className="form-row">
           <div className="form-group">
             <label className="form-label">Precio compra</label>
-            <input className="form-input" type="number" placeholder="150" value={form.buy_price} onChange={e=>set("buy_price",e.target.value)} />
+            <input className="form-input" type="number" placeholder={isRE ? "180000" : "150"} value={form.buy_price} onChange={e=>set("buy_price",e.target.value)} />
           </div>
           <div className="form-group">
-            <label className="form-label">Precio actual</label>
-            <input className="form-input" type="number" placeholder="189" value={form.current_price} onChange={e=>set("current_price",e.target.value)} />
+            <label className="form-label">Valor actual</label>
+            <input className="form-input" type="number" placeholder={isRE ? "210000" : "189"} value={form.current_price} onChange={e=>set("current_price",e.target.value)} />
           </div>
         </div>
+
+        {isRE && (
+          <div className="form-group">
+            <label className="form-label">Notas</label>
+            <textarea className="form-input" placeholder="Observaciones, inquilinos, reformas..." value={form.notes} onChange={e=>set("notes",e.target.value)} rows={3} style={{resize:"vertical"}} />
+          </div>
+        )}
+
         <div className="modal-actions">
           <button className="btn-cancel" onClick={onClose}>Cancelar</button>
           <button className="btn-primary" onClick={handleSubmit}>{editMode ? "Guardar cambios" : "Guardar activo"}</button>
