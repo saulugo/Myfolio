@@ -617,15 +617,19 @@ function AddAssetModal({ onClose, onAdd, onEdit, asset }) {
   const handleSubmit = () => {
     if (!form.name || !form.buy_price) return;
     if (!isRE && !form.quantity) return;
+    const { address, rent, monthly_costs, purchase_date, notes, ...baseForm } = form;
     const fields = {
-      ...form,
+      ...baseForm,
       quantity: isRE ? 1 : parseFloat(form.quantity),
       buy_price: parseFloat(form.buy_price),
       current_price: parseFloat(form.current_price || form.buy_price),
       ...(isRE && {
-        rent: parseFloat(form.rent) || 0,
-        monthly_costs: parseFloat(form.monthly_costs) || 0,
-        net_income: (parseFloat(form.rent) || 0) - (parseFloat(form.monthly_costs) || 0),
+        address,
+        rent: parseFloat(rent) || 0,
+        monthly_costs: parseFloat(monthly_costs) || 0,
+        net_income: (parseFloat(rent) || 0) - (parseFloat(monthly_costs) || 0),
+        purchase_date: purchase_date || null,
+        notes: notes || null,
       }),
     };
     if (editMode) {
