@@ -820,8 +820,26 @@ function Dashboard({ user, onLogout }) {
   const typeTotal = (type) => assets.filter(a => a.type === type).reduce((s, a) => s + toDisplay(a.quantity * a.current_price, a.currency), 0);
   const filtered = filter === "all" ? assets : assets.filter(a => a.type === filter);
 
+  const ACCUMULABLE_TYPES = ["stock", "crypto", "fund"];
+
   const handleAdd = async (asset) => {
     try {
+      if (ACCUMULABLE_TYPES.includes(asset.type)) {
+        const existing = assets.find(
+          a => a.type === asset.type && a.ticker === asset.ticker && a.currency === asset.currency
+        );
+        if (existing) {
+          const newQuantity = existing.quantity + asset.quantity;
+          const newBuyPrice = (existing.quantity * existing.buy_price + asset.quantity * asset.buy_price) / newQuantity;
+          const updated = await sb.updateAsset(existing.id, {
+            quantity: newQuantity,
+            buy_price: parseFloat(newBuyPrice.toFixed(6)),
+            current_price: asset.current_price,
+          });
+          setAssets(prev => prev.map(a => a.id === existing.id ? { ...a, ...updated } : a));
+          return;
+        }
+      }
       const saved = await sb.addAsset(asset);
       setAssets(prev => [saved, ...prev]);
     } catch(e) { alert(e.message); }
