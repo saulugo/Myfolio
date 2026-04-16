@@ -122,6 +122,7 @@ const TYPE_META = {
   stock:       { label: "Acciones",     icon: "📈", color: "#4ade80", bg: "rgba(74,222,128,0.1)"  },
   crypto:      { label: "Crypto",       icon: "₿",  color: "#f59e0b", bg: "rgba(245,158,11,0.1)"  },
   real_estate: { label: "Inmobiliario", icon: "🏢", color: "#60a5fa", bg: "rgba(96,165,250,0.1)"  },
+  fund:        { label: "Fondos",       icon: "🏦", color: "#a78bfa", bg: "rgba(167,139,250,0.1)" },
 };
 
 // ============================================================
@@ -611,6 +612,7 @@ function AddAssetModal({ onClose, onAdd, onEdit, asset }) {
   });
   const set = (k, v) => setForm(f => ({...f, [k]: v}));
   const isRE = form.type === "real_estate";
+  const isFund = form.type === "fund";
 
   const handleSubmit = () => {
     if (!form.name || !form.buy_price) return;
@@ -644,6 +646,7 @@ function AddAssetModal({ onClose, onAdd, onEdit, asset }) {
             <option value="stock">📈 Acciones</option>
             <option value="crypto">₿ Crypto</option>
             <option value="real_estate">🏢 Inmobiliario</option>
+            <option value="fund">🏦 Fondos de inversión</option>
           </select>
         </div>
 
@@ -651,12 +654,18 @@ function AddAssetModal({ onClose, onAdd, onEdit, asset }) {
         <div className="form-row">
           <div className="form-group">
             <label className="form-label">Nombre</label>
-            <input className="form-input" placeholder={isRE ? "Apto. Madrid Centro" : "Apple Inc."} value={form.name} onChange={e=>set("name",e.target.value)} />
+            <input className="form-input"
+              placeholder={isRE ? "Apto. Madrid Centro" : isFund ? "Vanguard Global Stock" : "Apple Inc."}
+              value={form.name} onChange={e=>set("name",e.target.value)} />
           </div>
           {!isRE && (
             <div className="form-group">
-              <label className="form-label">Ticker / ID</label>
-              <input className="form-input" placeholder="AAPL" value={form.ticker} onChange={e=>set("ticker", e.target.value.toUpperCase().replace(/[^A-Z.\-]/g, ""))} />
+              <label className="form-label">{isFund ? "ISIN / Ticker" : "Ticker / ID"}</label>
+              <input className="form-input"
+                placeholder={isFund ? "ES0173323000" : "AAPL"}
+                value={form.ticker}
+                onChange={e => set("ticker", e.target.value.toUpperCase().replace(isFund ? /[^A-Z0-9]/g : /[^A-Z.\-]/g, ""))}
+              />
             </div>
           )}
         </div>
@@ -704,8 +713,8 @@ function AddAssetModal({ onClose, onAdd, onEdit, asset }) {
         {!isRE && (
           <div className="form-row">
             <div className="form-group">
-              <label className="form-label">Cantidad</label>
-              <input className="form-input" type="number" placeholder="10" value={form.quantity} onChange={e=>set("quantity",e.target.value)} />
+              <label className="form-label">{isFund ? "Participaciones" : "Cantidad"}</label>
+              <input className="form-input" type="number" placeholder={isFund ? "150.5" : "10"} value={form.quantity} onChange={e=>set("quantity",e.target.value)} />
             </div>
             <div className="form-group">
               <label className="form-label">Moneda</label>
@@ -720,12 +729,12 @@ function AddAssetModal({ onClose, onAdd, onEdit, asset }) {
 
         <div className="form-row">
           <div className="form-group">
-            <label className="form-label">Precio compra</label>
-            <input className="form-input" type="number" placeholder={isRE ? "180000" : "150"} value={form.buy_price} onChange={e=>set("buy_price",e.target.value)} />
+            <label className="form-label">{isFund ? "Precio de compra / participación" : "Precio compra"}</label>
+            <input className="form-input" type="number" placeholder={isRE ? "180000" : isFund ? "12.50" : "150"} value={form.buy_price} onChange={e=>set("buy_price",e.target.value)} />
           </div>
           <div className="form-group">
-            <label className="form-label">Valor actual</label>
-            <input className="form-input" type="number" placeholder={isRE ? "210000" : "189"} value={form.current_price} onChange={e=>set("current_price",e.target.value)} />
+            <label className="form-label">{isFund ? "Valor liquidativo actual" : "Valor actual"}</label>
+            <input className="form-input" type="number" placeholder={isRE ? "210000" : isFund ? "14.80" : "189"} value={form.current_price} onChange={e=>set("current_price",e.target.value)} />
           </div>
         </div>
 
@@ -935,7 +944,7 @@ function Dashboard({ user, onLogout }) {
               Toca <strong style={{color:"var(--green)"}}>+</strong> para agregar
             </div>
           ) : filtered.map(asset => {
-            const meta = TYPE_META[asset.type];
+            const meta = TYPE_META[asset.type] || TYPE_META.stock;
             const value = asset.quantity * asset.current_price;
             const roi = calcROI(asset.buy_price, asset.current_price);
             const gain = (asset.current_price - asset.buy_price) * asset.quantity;
@@ -945,7 +954,7 @@ function Dashboard({ user, onLogout }) {
                 <div className="asset-info">
                   <div className="asset-name">{asset.name}</div>
                   <div className="asset-meta">
-                    {asset.ticker} · {fmt(asset.quantity, asset.type==="real_estate"?0:4)} uds
+                    {asset.ticker} · {fmt(asset.quantity, asset.type==="real_estate"?0:4)} {asset.type==="fund"?"part.":"uds"}
                   </div>
                 </div>
                 <div className="asset-right">
