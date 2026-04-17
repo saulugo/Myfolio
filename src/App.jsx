@@ -651,6 +651,28 @@ function AddAssetModal({ onClose, onAdd, onEdit, asset }) {
   const set = (k, v) => setForm(f => ({...f, [k]: v}));
   const isRE = form.type === "real_estate";
   const isFund = form.type === "fund";
+  const [fetchingPrice, setFetchingPrice] = useState(false);
+
+  const handleFetchPrice = async () => {
+    if (!form.ticker) { alert("Introduce primero el Ticker / ISIN"); return; }
+    setFetchingPrice(true);
+    try {
+      let price = null;
+      if (form.type === 'crypto') {
+        const cgId = COINGECKO_IDS[form.ticker];
+        if (!cgId) { alert(`Ticker "${form.ticker}" no reconocido. Comprueba el ticker.`); return; }
+        const cur = ['usd','eur'].includes(form.currency.toLowerCase()) ? form.currency.toLowerCase() : 'usd';
+        const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${cgId}&vs_currencies=${cur}`);
+        const data = await res.json();
+        price = data[cgId]?.[cur] ?? null;
+      } else {
+        price = await fetchStockPrice(form.ticker);
+      }
+      if (price != null) set("current_price", price);
+      else alert("No se pudo obtener el precio. Verifica el ticker.");
+    } catch { alert("Error al conectar con la API de precios."); }
+    finally { setFetchingPrice(false); }
+  };
 
   const handleSubmit = () => {
     if (!form.name || !form.buy_price) return;
@@ -776,7 +798,20 @@ function AddAssetModal({ onClose, onAdd, onEdit, asset }) {
           </div>
           <div className="form-group">
             <label className="form-label">{isFund ? "Valor liquidativo actual" : "Valor actual"}</label>
-            <input className="form-input" type="number" placeholder={isRE ? "210000" : isFund ? "14.80" : "189"} value={form.current_price} onChange={e=>set("current_price",e.target.value)} />
+            {!isRE ? (
+              <div style={{display:"flex", gap:6}}>
+                <input className="form-input" type="number" placeholder={isFund ? "14.80" : "189"} value={form.current_price} onChange={e=>set("current_price",e.target.value)} style={{flex:1, minWidth:0}} />
+                <button
+                  type="button"
+                  onClick={handleFetchPrice}
+                  disabled={fetchingPrice || !form.ticker}
+                  title="Obtener precio actual"
+                  style={{background:"var(--card)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:8, color: !form.ticker ? "var(--muted)" : "var(--green)", fontSize:16, cursor: fetchingPrice || !form.ticker ? "default" : "pointer", padding:"0 12px", whiteSpace:"nowrap"}}
+                >{fetchingPrice ? "⏳" : "🔄"}</button>
+              </div>
+            ) : (
+              <input className="form-input" type="number" placeholder="210000" value={form.current_price} onChange={e=>set("current_price",e.target.value)} />
+            )}
           </div>
         </div>
 
