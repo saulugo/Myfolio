@@ -148,12 +148,29 @@ async function fetchCryptoPrices(assets) {
 }
 
 async function fetchStockPrice(ticker) {
+  const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`;
+  const extractPrice = d => d?.chart?.result?.[0]?.meta?.regularMarketPrice ?? null;
+
+  // Proxy 1: corsproxy.io
   try {
-    const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`;
     const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(yUrl)}`);
-    const data = await res.json();
-    return data?.chart?.result?.[0]?.meta?.regularMarketPrice ?? null;
-  } catch { return null; }
+    if (res.ok) {
+      const price = extractPrice(await res.json());
+      if (price != null) return price;
+    }
+  } catch {}
+
+  // Proxy 2: allorigins.win
+  try {
+    const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(yUrl)}`);
+    if (res.ok) {
+      const wrapper = await res.json();
+      const price = extractPrice(JSON.parse(wrapper.contents));
+      if (price != null) return price;
+    }
+  } catch {}
+
+  return null;
 }
 
 const TYPE_META = {
