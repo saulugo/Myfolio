@@ -118,6 +118,44 @@ const DEMO_ASSETS = [
   { id: 5, type: "real_estate", name: "Apto. Madrid Centro", ticker: "MAD-01", quantity: 1, buy_price: 180000, current_price: 210000, currency: "EUR" },
 ];
 
+// ============================================================
+// PRICE FETCHING
+// ============================================================
+const COINGECKO_IDS = {
+  BTC: 'bitcoin', ETH: 'ethereum', SOL: 'solana', ADA: 'cardano',
+  XRP: 'ripple', DOGE: 'dogecoin', AVAX: 'avalanche-2', MATIC: 'matic-network',
+  DOT: 'polkadot', LINK: 'chainlink', UNI: 'uniswap', LTC: 'litecoin',
+  ATOM: 'cosmos', BNB: 'binancecoin', USDT: 'tether', USDC: 'usd-coin',
+  WBETH: 'wrapped-beacon-eth',
+};
+
+async function fetchCryptoPrices(assets) {
+  const targets = assets
+    .filter(a => a.type === 'crypto' && COINGECKO_IDS[a.ticker])
+    .map(a => ({ id: a.id, cgId: COINGECKO_IDS[a.ticker], currency: a.currency.toLowerCase() }));
+  if (!targets.length) return {};
+  const ids = [...new Set(targets.map(t => t.cgId))].join(',');
+  try {
+    const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd,eur`);
+    const data = await res.json();
+    const prices = {};
+    targets.forEach(({ id, cgId, currency }) => {
+      const cur = ['usd','eur'].includes(currency) ? currency : 'usd';
+      if (data[cgId]?.[cur] != null) prices[id] = data[cgId][cur];
+    });
+    return prices;
+  } catch { return {}; }
+}
+
+async function fetchStockPrice(ticker) {
+  try {
+    const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`;
+    const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(yUrl)}`);
+    const data = await res.json();
+    return data?.chart?.result?.[0]?.meta?.regularMarketPrice ?? null;
+  } catch { return null; }
+}
+
 const TYPE_META = {
   stock:       { label: "Acciones",     icon: "📈", color: "#4ade80", bg: "rgba(74,222,128,0.1)"  },
   crypto:      { label: "Crypto",       icon: "₿",  color: "#f59e0b", bg: "rgba(245,158,11,0.1)"  },
@@ -767,6 +805,8 @@ function Dashboard({ user, onLogout }) {
   const [filter, setFilter] = useState("all");
   const [showModal, setShowModal] = useState(false);
   const [editingAsset, setEditingAsset] = useState(null);
+  const [updatingPrices, setUpdatingPrices] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(null);
   const [displayCurrency, setDisplayCurrency] = useState(
     () => localStorage.getItem("display_currency") || "USD"
   );
@@ -819,6 +859,31 @@ function Dashboard({ user, onLogout }) {
 
   const typeTotal = (type) => assets.filter(a => a.type === type).reduce((s, a) => s + toDisplay(a.quantity * a.current_price, a.currency), 0);
   const filtered = filter === "all" ? assets : assets.filter(a => a.type === filter);
+
+  const handleUpdatePrices = async () => {
+    const updatable = assets.filter(a => a.type !== 'real_estate');
+    if (!updatable.length) return;
+    setUpdatingPrices(true);
+    try {
+      const newPrices = {};
+      // Crypto via CoinGecko (batch)
+      const cryptoPrices = await fetchCryptoPrices(updatable);
+      Object.assign(newPrices, cryptoPrices);
+      // Stocks & funds via Yahoo Finance (parallel)
+      const stockAssets = updatable.filter(a => (a.type === 'stock' || a.type === 'fund') && a.ticker);
+      const results = await Promise.allSettled(
+        stockAssets.map(a => fetchStockPrice(a.ticker).then(price => ({ id: a.id, price })))
+      );
+      results.forEach(r => { if (r.status === 'fulfilled' && r.value.price != null) newPrices[r.value.id] = r.value.price; });
+      // Persist to Supabase and update local state
+      const updates = Object.entries(newPrices);
+      if (!updates.length) { alert("No se pudieron obtener precios. Comprueba los tickers."); return; }
+      await Promise.allSettled(updates.map(([id, price]) => sb.updateAsset(id, { current_price: price })));
+      setAssets(prev => prev.map(a => newPrices[a.id] != null ? { ...a, current_price: newPrices[a.id] } : a));
+      setLastUpdate(new Date());
+    } catch(e) { alert(e.message); }
+    finally { setUpdatingPrices(false); }
+  };
 
   const ACCUMULABLE_TYPES = ["stock", "crypto", "fund"];
 
@@ -951,9 +1016,24 @@ function Dashboard({ user, onLogout }) {
 
         {/* ASSET LIST */}
         <div className="section-head">
-          <div className="section-title">Mis activos</div>
-          <div className="filter-tabs">
-            <button className={`tab ${filter==="all"?"active":""}`} onClick={()=>setFilter("all")}>Todos</button>
+          <div>
+            <div className="section-title">Mis activos</div>
+            {lastUpdate && (
+              <div style={{fontSize:10, color:"var(--muted)", marginTop:2}}>
+                Actualizado: {lastUpdate.toLocaleTimeString("es-ES", {hour:"2-digit", minute:"2-digit"})}
+              </div>
+            )}
+          </div>
+          <div style={{display:"flex", alignItems:"center", gap:8}}>
+            <div className="filter-tabs">
+              <button className={`tab ${filter==="all"?"active":""}`} onClick={()=>setFilter("all")}>Todos</button>
+            </div>
+            <button
+              onClick={handleUpdatePrices}
+              disabled={updatingPrices}
+              title="Actualizar precios"
+              style={{background:"none", border:"1px solid rgba(255,255,255,0.12)", borderRadius:8, color: updatingPrices ? "var(--muted)" : "var(--green)", fontSize:16, cursor: updatingPrices ? "default" : "pointer", padding:"4px 10px", lineHeight:1}}
+            >{updatingPrices ? "⏳" : "🔄"}</button>
           </div>
         </div>
 
