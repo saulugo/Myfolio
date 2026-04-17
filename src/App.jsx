@@ -1058,6 +1058,9 @@ function Dashboard({ user, onLogout }) {
                   <div className="asset-meta">
                     {asset.ticker} · {fmt(asset.quantity, asset.type==="real_estate"?0:4)} {asset.type==="fund"?"part.":"uds"}
                   </div>
+                  <div style={{fontSize:11, color:"var(--muted)", marginTop:2}}>
+                    Precio: {fmtMoney(asset.current_price, asset.currency)}
+                  </div>
                 </div>
                 <div className="asset-right">
                   <div className="asset-value">{fmtMoney(value, asset.currency)}</div>
