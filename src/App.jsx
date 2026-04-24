@@ -918,6 +918,7 @@ function Dashboard({ user, onLogout }) {
   const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("value-desc");
   const [showModal, setShowModal] = useState(false);
   const [editingAsset, setEditingAsset] = useState(null);
   const [updatingPrices, setUpdatingPrices] = useState(false);
@@ -980,7 +981,17 @@ function Dashboard({ user, onLogout }) {
   const totalGain = totalCurrent - totalInvested;
 
   const typeTotal = (type) => assets.filter(a => a.type === type).reduce((s, a) => s + toDisplay(a.quantity * a.current_price, a.currency), 0);
-  const filtered = filter === "all" ? assets : assets.filter(a => a.type === filter);
+
+  const filtered = (() => {
+    const base = filter === "all" ? assets : assets.filter(a => a.type === filter);
+    return [...base].sort((a, b) => {
+      if (sortBy === "value-desc") return toDisplay(b.quantity * b.current_price, b.currency) - toDisplay(a.quantity * a.current_price, a.currency);
+      if (sortBy === "value-asc")  return toDisplay(a.quantity * a.current_price, a.currency) - toDisplay(b.quantity * b.current_price, b.currency);
+      if (sortBy === "name-asc")   return a.name.localeCompare(b.name, "es");
+      if (sortBy === "name-desc")  return b.name.localeCompare(a.name, "es");
+      return 0;
+    });
+  })();
 
   const handleUpdatePrices = async () => {
     const updatable = assets.filter(a => a.type !== 'real_estate');
@@ -1158,6 +1169,16 @@ function Dashboard({ user, onLogout }) {
             <div className="filter-tabs">
               <button className={`tab ${filter==="all"?"active":""}`} onClick={()=>setFilter("all")}>Todos</button>
             </div>
+            <select
+              value={sortBy}
+              onChange={e => setSortBy(e.target.value)}
+              style={{background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:8, color:"var(--muted)", fontSize:11, padding:"4px 8px", cursor:"pointer", fontFamily:"'DM Mono',monospace"}}
+            >
+              <option value="value-desc">Valor ↓</option>
+              <option value="value-asc">Valor ↑</option>
+              <option value="name-asc">A → Z</option>
+              <option value="name-desc">Z → A</option>
+            </select>
             <button
               onClick={handleUpdatePrices}
               disabled={updatingPrices}
