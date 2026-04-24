@@ -170,6 +170,25 @@ async function fetchStockPrice(ticker) {
     }
   } catch {}
 
+  // Proxy 3: codetabs
+  try {
+    const res = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yUrl)}`);
+    if (res.ok) {
+      const price = extractPrice(await res.json());
+      if (price != null) return price;
+    }
+  } catch {}
+
+  // Proxy 4: query2 subdomain via corsproxy
+  try {
+    const yUrl2 = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`;
+    const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(yUrl2)}`);
+    if (res.ok) {
+      const price = extractPrice(await res.json());
+      if (price != null) return price;
+    }
+  } catch {}
+
   return null;
 }
 
