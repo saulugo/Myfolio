@@ -148,45 +148,34 @@ async function fetchCryptoPrices(assets) {
 }
 
 async function fetchStockPrice(ticker) {
+  // Primary: Vercel serverless function (no CORS issues)
+  try {
+    const res = await fetch(`/api/stock-price?ticker=${encodeURIComponent(ticker)}`);
+    if (res.ok) {
+      const { price } = await res.json();
+      if (price != null) return price;
+    }
+  } catch {}
+
   const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`;
   const extractPrice = d => d?.chart?.result?.[0]?.meta?.regularMarketPrice ?? null;
 
-  // Proxy 1: corsproxy.io
+  // Fallback 1: corsproxy.io
   try {
     const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(yUrl)}`);
-    if (res.ok) {
-      const price = extractPrice(await res.json());
-      if (price != null) return price;
-    }
+    if (res.ok) { const price = extractPrice(await res.json()); if (price != null) return price; }
   } catch {}
 
-  // Proxy 2: allorigins.win
+  // Fallback 2: allorigins.win
   try {
     const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(yUrl)}`);
-    if (res.ok) {
-      const wrapper = await res.json();
-      const price = extractPrice(JSON.parse(wrapper.contents));
-      if (price != null) return price;
-    }
+    if (res.ok) { const w = await res.json(); const price = extractPrice(JSON.parse(w.contents)); if (price != null) return price; }
   } catch {}
 
-  // Proxy 3: codetabs
+  // Fallback 3: codetabs
   try {
     const res = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yUrl)}`);
-    if (res.ok) {
-      const price = extractPrice(await res.json());
-      if (price != null) return price;
-    }
-  } catch {}
-
-  // Proxy 4: query2 subdomain via corsproxy
-  try {
-    const yUrl2 = `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`;
-    const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(yUrl2)}`);
-    if (res.ok) {
-      const price = extractPrice(await res.json());
-      if (price != null) return price;
-    }
+    if (res.ok) { const price = extractPrice(await res.json()); if (price != null) return price; }
   } catch {}
 
   return null;
