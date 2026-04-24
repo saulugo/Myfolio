@@ -1177,9 +1177,10 @@ function Dashboard({ user, onLogout }) {
             </div>
           ) : filtered.map(asset => {
             const meta = TYPE_META[asset.type] || TYPE_META.stock;
-            const value = asset.quantity * asset.current_price;
+            const value = toDisplay(asset.quantity * asset.current_price, asset.currency);
             const roi = calcROI(asset.buy_price, asset.current_price);
-            const gain = (asset.current_price - asset.buy_price) * asset.quantity;
+            const gain = toDisplay((asset.current_price - asset.buy_price) * asset.quantity, asset.currency);
+            const displayPrice = toDisplay(asset.current_price, asset.currency);
             return (
               <div key={asset.id} className="asset-card" style={{position:"relative"}}>
                 <div className="asset-icon" style={{background: meta.bg}}>{meta.icon}</div>
@@ -1189,14 +1190,14 @@ function Dashboard({ user, onLogout }) {
                     {asset.ticker} · {fmt(asset.quantity, asset.type==="real_estate"?0:4)} {asset.type==="fund"?"part.":"uds"}
                   </div>
                   <div style={{fontSize:11, color:"var(--muted)", marginTop:2}}>
-                    Precio: {fmtMoney(asset.current_price, asset.currency)}
+                    Precio: {fmtMoney(displayPrice, displayCurrency)}
                   </div>
                 </div>
                 <div className="asset-right">
-                  <div className="asset-value">{fmtMoney(value, asset.currency)}</div>
+                  <div className="asset-value">{fmtMoney(value, displayCurrency)}</div>
                   <div className={`asset-roi ${roi >= 0 ? "pos" : "neg"}`}>
                     {roi >= 0 ? "▲" : "▼"} {fmt(Math.abs(roi))}%
-                    &nbsp;({gain >= 0 ? "+" : ""}{fmtMoney(gain, asset.currency)})
+                    &nbsp;({gain >= 0 ? "+" : ""}{fmtMoney(gain, displayCurrency)})
                   </div>
                   <div style={{display:"flex",gap:8,marginTop:4}}>
                     <button
