@@ -129,6 +129,12 @@ const COINGECKO_IDS = {
   WBETH: 'wrapped-beacon-eth',
 };
 
+function fetchWithTimeout(url, options = {}, ms = 7000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { ...options, signal: ctrl.signal }).finally(() => clearTimeout(timer));
+}
+
 async function fetchCryptoPrices(assets) {
   const targets = assets
     .filter(a => a.type === 'crypto' && COINGECKO_IDS[a.ticker])
@@ -136,7 +142,7 @@ async function fetchCryptoPrices(assets) {
   if (!targets.length) return {};
   const ids = [...new Set(targets.map(t => t.cgId))].join(',');
   try {
-    const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd,eur`);
+    const res = await fetchWithTimeout(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd,eur`);
     const data = await res.json();
     const prices = {};
     targets.forEach(({ id, cgId, currency }) => {
@@ -150,7 +156,7 @@ async function fetchCryptoPrices(assets) {
 async function fetchStockPrice(ticker) {
   // Primary: Vercel serverless function (no CORS issues)
   try {
-    const res = await fetch(`/api/stock-price?ticker=${encodeURIComponent(ticker)}`);
+    const res = await fetchWithTimeout(`/api/stock-price?ticker=${encodeURIComponent(ticker)}`);
     if (res.ok) {
       const { price } = await res.json();
       if (price != null) return price;
@@ -162,19 +168,19 @@ async function fetchStockPrice(ticker) {
 
   // Fallback 1: corsproxy.io
   try {
-    const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(yUrl)}`);
+    const res = await fetchWithTimeout(`https://corsproxy.io/?url=${encodeURIComponent(yUrl)}`);
     if (res.ok) { const price = extractPrice(await res.json()); if (price != null) return price; }
   } catch {}
 
   // Fallback 2: allorigins.win
   try {
-    const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(yUrl)}`);
+    const res = await fetchWithTimeout(`https://api.allorigins.win/get?url=${encodeURIComponent(yUrl)}`);
     if (res.ok) { const w = await res.json(); const price = extractPrice(JSON.parse(w.contents)); if (price != null) return price; }
   } catch {}
 
   // Fallback 3: codetabs
   try {
-    const res = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yUrl)}`);
+    const res = await fetchWithTimeout(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yUrl)}`);
     if (res.ok) { const price = extractPrice(await res.json()); if (price != null) return price; }
   } catch {}
 
@@ -687,7 +693,7 @@ function AddAssetModal({ onClose, onAdd, onEdit, asset }) {
         const cgId = COINGECKO_IDS[form.ticker];
         if (!cgId) { alert(`Ticker "${form.ticker}" no reconocido. Comprueba el ticker.`); return; }
         const cur = ['usd','eur'].includes(form.currency.toLowerCase()) ? form.currency.toLowerCase() : 'usd';
-        const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${cgId}&vs_currencies=${cur}`);
+        const res = await fetchWithTimeout(`https://api.coingecko.com/api/v3/simple/price?ids=${cgId}&vs_currencies=${cur}`);
         const data = await res.json();
         price = data[cgId]?.[cur] ?? null;
       } else {
