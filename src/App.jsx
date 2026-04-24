@@ -187,8 +187,9 @@ async function fetchStockPrice(ticker) {
       run: async () => {
         const res = await fetchWithTimeout(`/api/stock-price?ticker=${encodeURIComponent(ticker)}`);
         if (!res.ok) return null;
-        const { price } = await res.json();
-        return price ?? null;
+        const body = await res.json();
+        if (body.resolvedTicker) logger.info(`${ticker} es ISIN → resuelto a ticker ${body.resolvedTicker}`);
+        return body.price ?? null;
       },
     },
     {
