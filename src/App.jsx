@@ -129,6 +129,21 @@ const COINGECKO_IDS = {
   WBETH: 'wrapped-beacon-eth',
 };
 
+// ============================================================
+// LOGGER
+// ============================================================
+let _pushLog = null;
+const logger = {
+  _emit(level, msg) {
+    const entry = { level, msg, ts: new Date() };
+    console[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'](`[${level.toUpperCase()}] ${msg}`);
+    _pushLog?.(entry);
+  },
+  info: (msg) => logger._emit('info', msg),
+  warn: (msg) => logger._emit('warn', msg),
+  error: (msg) => logger._emit('error', msg),
+};
+
 function fetchWithTimeout(url, options = {}, ms = 7000) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), ms);
@@ -141,49 +156,82 @@ async function fetchCryptoPrices(assets) {
     .map(a => ({ id: a.id, cgId: COINGECKO_IDS[a.ticker], currency: a.currency.toLowerCase() }));
   if (!targets.length) return {};
   const ids = [...new Set(targets.map(t => t.cgId))].join(',');
+  const skipped = assets.filter(a => a.type === 'crypto' && !COINGECKO_IDS[a.ticker]);
+  skipped.forEach(a => logger.warn(`Crypto "${a.ticker}" no está en la lista de CoinGecko — precio no actualizado`));
+  logger.info(`CoinGecko: consultando ${targets.length} crypto(s): ${[...new Set(targets.map(t => t.cgId))].join(', ')}`);
   try {
     const res = await fetchWithTimeout(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd,eur`);
+    if (!res.ok) { logger.error(`CoinGecko respondió ${res.status} ${res.statusText}`); return {}; }
     const data = await res.json();
     const prices = {};
     targets.forEach(({ id, cgId, currency }) => {
       const cur = ['usd','eur'].includes(currency) ? currency : 'usd';
       if (data[cgId]?.[cur] != null) prices[id] = data[cgId][cur];
+      else logger.warn(`CoinGecko: no devolvió precio para ${cgId} en ${cur}`);
     });
+    logger.info(`CoinGecko OK — ${Object.keys(prices).length}/${targets.length} precios obtenidos`);
     return prices;
-  } catch { return {}; }
+  } catch (e) {
+    logger.error(`CoinGecko falló: ${e.name === 'AbortError' ? 'timeout (7s)' : e.message}`);
+    return {};
+  }
 }
 
 async function fetchStockPrice(ticker) {
-  // Primary: Vercel serverless function (no CORS issues)
-  try {
-    const res = await fetchWithTimeout(`/api/stock-price?ticker=${encodeURIComponent(ticker)}`);
-    if (res.ok) {
-      const { price } = await res.json();
-      if (price != null) return price;
-    }
-  } catch {}
-
   const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`;
   const extractPrice = d => d?.chart?.result?.[0]?.meta?.regularMarketPrice ?? null;
 
-  // Fallback 1: corsproxy.io
-  try {
-    const res = await fetchWithTimeout(`https://corsproxy.io/?url=${encodeURIComponent(yUrl)}`);
-    if (res.ok) { const price = extractPrice(await res.json()); if (price != null) return price; }
-  } catch {}
+  const proxies = [
+    {
+      name: '/api/stock-price (serverless)',
+      run: async () => {
+        const res = await fetchWithTimeout(`/api/stock-price?ticker=${encodeURIComponent(ticker)}`);
+        if (!res.ok) return null;
+        const { price } = await res.json();
+        return price ?? null;
+      },
+    },
+    {
+      name: 'corsproxy.io',
+      run: async () => {
+        const res = await fetchWithTimeout(`https://corsproxy.io/?url=${encodeURIComponent(yUrl)}`);
+        if (!res.ok) return null;
+        return extractPrice(await res.json());
+      },
+    },
+    {
+      name: 'allorigins.win',
+      run: async () => {
+        const res = await fetchWithTimeout(`https://api.allorigins.win/get?url=${encodeURIComponent(yUrl)}`);
+        if (!res.ok) return null;
+        const w = await res.json();
+        return extractPrice(JSON.parse(w.contents));
+      },
+    },
+    {
+      name: 'codetabs.com',
+      run: async () => {
+        const res = await fetchWithTimeout(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yUrl)}`);
+        if (!res.ok) return null;
+        return extractPrice(await res.json());
+      },
+    },
+  ];
 
-  // Fallback 2: allorigins.win
-  try {
-    const res = await fetchWithTimeout(`https://api.allorigins.win/get?url=${encodeURIComponent(yUrl)}`);
-    if (res.ok) { const w = await res.json(); const price = extractPrice(JSON.parse(w.contents)); if (price != null) return price; }
-  } catch {}
+  for (const proxy of proxies) {
+    try {
+      const price = await proxy.run();
+      if (price != null) {
+        logger.info(`${ticker}: ${price} USD/EUR (vía ${proxy.name})`);
+        return price;
+      }
+      logger.warn(`${ticker}: ${proxy.name} no devolvió precio`);
+    } catch (e) {
+      logger.warn(`${ticker}: ${proxy.name} falló — ${e.name === 'AbortError' ? 'timeout (7s)' : e.message}`);
+    }
+  }
 
-  // Fallback 3: codetabs
-  try {
-    const res = await fetchWithTimeout(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yUrl)}`);
-    if (res.ok) { const price = extractPrice(await res.json()); if (price != null) return price; }
-  } catch {}
-
+  logger.error(`${ticker}: todos los proxies fallaron — precio no actualizado`);
   return null;
 }
 
@@ -883,6 +931,13 @@ function Dashboard({ user, onLogout }) {
     () => localStorage.getItem("fx_rate") || "1.17"
   );
   const [editingFx, setEditingFx] = useState(false);
+  const [appLogs, setAppLogs] = useState([]);
+  const [showLogs, setShowLogs] = useState(false);
+
+  useEffect(() => {
+    _pushLog = (entry) => setAppLogs(prev => [entry, ...prev].slice(0, 100));
+    return () => { _pushLog = null; };
+  }, []);
 
   const toDisplay = (amount, assetCurrency = "USD") => {
     if (!assetCurrency || assetCurrency === displayCurrency) return amount;
@@ -943,11 +998,19 @@ function Dashboard({ user, onLogout }) {
       results.forEach(r => { if (r.status === 'fulfilled' && r.value.price != null) newPrices[r.value.id] = r.value.price; });
       // Persist to Supabase and update local state
       const updates = Object.entries(newPrices);
-      if (!updates.length) { alert("No se pudieron obtener precios. Comprueba los tickers."); return; }
+      if (!updates.length) {
+        logger.error("No se pudo obtener ningún precio. Comprueba los tickers y la conexión.");
+        alert("No se pudieron obtener precios. Comprueba los tickers.");
+        return;
+      }
       await Promise.allSettled(updates.map(([id, price]) => sb.updateAsset(id, { current_price: price })));
       setAssets(prev => prev.map(a => newPrices[a.id] != null ? { ...a, current_price: newPrices[a.id] } : a));
       setLastUpdate(new Date());
-    } catch(e) { alert(e.message); }
+      logger.info(`Portafolio actualizado: ${updates.length}/${updatable.length} activos con precio nuevo`);
+    } catch(e) {
+      logger.error(`Error inesperado al actualizar precios: ${e.message}`);
+      alert(e.message);
+    }
     finally { setUpdatingPrices(false); }
   };
 
@@ -1156,6 +1219,49 @@ function Dashboard({ user, onLogout }) {
       <button className="btn-add" onClick={() => setShowModal(true)}>+</button>
       {showModal && <AddAssetModal onClose={() => setShowModal(false)} onAdd={handleAdd} />}
       {editingAsset && <AddAssetModal asset={editingAsset} onClose={() => setEditingAsset(null)} onEdit={handleUpdate} />}
+
+      {/* Activity log panel */}
+      <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:200,fontFamily:"'DM Mono',monospace"}}>
+        <button
+          onClick={() => setShowLogs(v => !v)}
+          style={{display:"flex",alignItems:"center",gap:6,width:"100%",padding:"6px 16px",background:"#111",border:"none",borderTop:"1px solid #222",color:"var(--muted)",fontSize:11,cursor:"pointer",textAlign:"left"}}
+        >
+          <span style={{fontSize:13}}>{showLogs ? "▼" : "▲"}</span>
+          <span>Actividad</span>
+          {appLogs.length > 0 && (
+            <span style={{
+              marginLeft:4,
+              background: appLogs[0]?.level === 'error' ? '#ef4444' : appLogs[0]?.level === 'warn' ? '#f59e0b' : '#22c55e',
+              color:"#000", borderRadius:8, fontSize:10, padding:"1px 6px", fontWeight:700,
+            }}>{appLogs.filter(l => l.level === 'error').length > 0 ? `${appLogs.filter(l=>l.level==='error').length} error(es)` : `${appLogs.length} eventos`}</span>
+          )}
+          {appLogs.length > 0 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setAppLogs([]); }}
+              style={{marginLeft:"auto",background:"none",border:"none",color:"var(--muted)",fontSize:11,cursor:"pointer"}}
+            >Limpiar</button>
+          )}
+        </button>
+        {showLogs && (
+          <div style={{maxHeight:220,overflowY:"auto",background:"#0a0a0a",borderTop:"1px solid #1e1e1e",padding:"8px 0"}}>
+            {appLogs.length === 0 ? (
+              <div style={{color:"var(--muted)",fontSize:11,padding:"8px 16px"}}>Sin actividad aún. Pulsa 🔄 para actualizar precios.</div>
+            ) : appLogs.map((log, i) => (
+              <div key={i} style={{display:"flex",gap:10,padding:"3px 16px",fontSize:11,lineHeight:1.5,
+                color: log.level==='error' ? '#f87171' : log.level==='warn' ? '#fbbf24' : '#86efac',
+              }}>
+                <span style={{color:"#444",flexShrink:0}}>
+                  {log.ts.toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit",second:"2-digit"})}
+                </span>
+                <span style={{flexShrink:0,width:36,color: log.level==='error'?'#f87171':log.level==='warn'?'#fbbf24':'#6ee7b7'}}>
+                  {log.level==='error'?'ERR':log.level==='warn'?'WARN':'INFO'}
+                </span>
+                <span>{log.msg}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
