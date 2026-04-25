@@ -447,10 +447,11 @@ const styles = `
   .hero-label { font-size: 11px; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; }
   .hero-total {
     font-family: 'Syne', sans-serif;
-    font-size: 42px; font-weight: 800;
-    letter-spacing: -2px;
+    font-size: clamp(24px, 6vw, 42px); font-weight: 800;
+    letter-spacing: -1px;
     margin: 6px 0;
     line-height: 1;
+    word-break: break-all;
   }
   .hero-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
   .badge-roi {
