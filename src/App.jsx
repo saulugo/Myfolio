@@ -1164,12 +1164,14 @@ function Dashboard({ user, onLogout }) {
   const [displayCurrency, setDisplayCurrency] = useState(
     () => localStorage.getItem("display_currency") || "USD"
   );
-  const [fxRate, setFxRate] = useState(
-    () => parseFloat(localStorage.getItem("fx_rate")) || 1.17
-  );
-  const [fxInput, setFxInput] = useState(
-    () => localStorage.getItem("fx_rate") || "1.17"
-  );
+  const [fxRate, setFxRate] = useState(() => {
+    const v = parseFloat(localStorage.getItem("fx_rate"));
+    return (v > 0.5 && v < 5) ? v : 1.17;
+  });
+  const [fxInput, setFxInput] = useState(() => {
+    const v = parseFloat(localStorage.getItem("fx_rate"));
+    return (v > 0.5 && v < 5) ? v.toString() : "1.17";
+  });
   const [editingFx, setEditingFx] = useState(false);
   const [fxAutoUpdated, setFxAutoUpdated] = useState(false);
   const [appLogs, setAppLogs] = useState([]);
@@ -1204,9 +1206,10 @@ function Dashboard({ user, onLogout }) {
   }, []);
 
   const toDisplay = (amount, assetCurrency = "USD") => {
-    if (!assetCurrency || assetCurrency === displayCurrency) return amount;
-    if (assetCurrency === "USD" && displayCurrency === "EUR") return amount / fxRate;
-    if (assetCurrency === "EUR" && displayCurrency === "USD") return amount * fxRate;
+    const cur = assetCurrency || "USD"; // tratar null/undefined como USD
+    if (cur === displayCurrency) return amount;
+    if (cur === "USD" && displayCurrency === "EUR") return amount / fxRate;
+    if (cur === "EUR" && displayCurrency === "USD") return amount * fxRate;
     return amount;
   };
 
