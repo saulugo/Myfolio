@@ -1597,6 +1597,9 @@ function Dashboard({ user, onLogout }) {
                   </div>
                   <div style={{fontSize:11, color:"var(--muted)", marginTop:2}}>
                     Precio: {fmtMoney(displayPrice, displayCurrency)}
+                    {asset.type !== 'real_estate' && (
+                      <span style={{marginLeft:8}}>· Coste medio: {fmtMoney(toDisplay(asset.buy_price, asset.currency), displayCurrency)}</span>
+                    )}
                   </div>
                 </div>
                 <div className="asset-right">
