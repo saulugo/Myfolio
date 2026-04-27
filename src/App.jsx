@@ -236,6 +236,15 @@ async function fetchStockPrice(ticker) {
   return null;
 }
 
+async function fetchFxRate() {
+  try {
+    const res = await fetchWithTimeout('https://api.frankfurter.app/latest?from=EUR&to=USD');
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.rates?.USD ?? null;
+  } catch { return null; }
+}
+
 const TYPE_META = {
   stock:       { label: "Acciones",     icon: "📈", color: "#4ade80", bg: "rgba(74,222,128,0.1)"  },
   crypto:      { label: "Crypto",       icon: "₿",  color: "#f59e0b", bg: "rgba(245,158,11,0.1)"  },
@@ -934,12 +943,32 @@ function Dashboard({ user, onLogout }) {
     () => localStorage.getItem("fx_rate") || "1.17"
   );
   const [editingFx, setEditingFx] = useState(false);
+  const [fxAutoUpdated, setFxAutoUpdated] = useState(false);
   const [appLogs, setAppLogs] = useState([]);
   const [showLogs, setShowLogs] = useState(false);
 
   useEffect(() => {
     _pushLog = (entry) => setAppLogs(prev => [entry, ...prev].slice(0, 100));
     return () => { _pushLog = null; };
+  }, []);
+
+  useEffect(() => {
+    const ts = parseInt(localStorage.getItem("fx_rate_ts") || "0");
+    const stale = Date.now() - ts > 24 * 60 * 60 * 1000;
+    if (stale) {
+      fetchFxRate().then(rate => {
+        if (rate) {
+          setFxRate(rate);
+          setFxInput(rate.toFixed(4));
+          setFxAutoUpdated(true);
+          localStorage.setItem("fx_rate", rate.toString());
+          localStorage.setItem("fx_rate_ts", Date.now().toString());
+          logger.info(`Tasa de cambio actualizada (BCE): 1 EUR = ${rate.toFixed(4)} USD`);
+        }
+      });
+    } else {
+      setFxAutoUpdated(!!localStorage.getItem("fx_rate_ts"));
+    }
   }, []);
 
   const toDisplay = (amount, assetCurrency = "USD") => {
@@ -958,8 +987,25 @@ function Dashboard({ user, onLogout }) {
     const rate = parseFloat(fxInput);
     if (!rate || rate <= 0) return;
     setFxRate(rate);
+    setFxAutoUpdated(false);
     localStorage.setItem("fx_rate", rate.toString());
+    localStorage.setItem("fx_rate_ts", Date.now().toString());
     setEditingFx(false);
+  };
+
+  const handleFxRefresh = () => {
+    fetchFxRate().then(rate => {
+      if (rate) {
+        setFxRate(rate);
+        setFxInput(rate.toFixed(4));
+        setFxAutoUpdated(true);
+        localStorage.setItem("fx_rate", rate.toString());
+        localStorage.setItem("fx_rate_ts", Date.now().toString());
+        logger.info(`Tasa de cambio actualizada (BCE): 1 EUR = ${rate.toFixed(4)} USD`);
+      } else {
+        logger.warn("No se pudo obtener la tasa de cambio de Frankfurter/BCE");
+      }
+    });
   };
 
   const loadAssets = useCallback(async () => {
@@ -1125,7 +1171,14 @@ function Dashboard({ user, onLogout }) {
               </>
             ) : (
               <>
-                <span style={{color:"var(--fg)", fontWeight:600}}>{fxRate} USD</span>
+                <span style={{color:"var(--fg)", fontWeight:600}}>{parseFloat(fxRate).toFixed(4)} USD</span>
+                {fxAutoUpdated && (
+                  <span title="Actualizado automáticamente (BCE)" style={{fontSize:11, color:"var(--muted)"}}>🌐</span>
+                )}
+                <button onClick={handleFxRefresh} title="Actualizar tasa ahora"
+                  style={{background:"none",border:"none",color:"var(--muted)",cursor:"pointer",fontSize:11,padding:0}}>
+                  🔄
+                </button>
                 <button onClick={() => { setFxInput(fxRate.toString()); setEditingFx(true); }}
                   style={{background:"none",border:"none",color:"var(--muted)",cursor:"pointer",fontSize:12,padding:0}}>
                   ✏️
