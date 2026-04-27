@@ -1045,7 +1045,15 @@ function TradeModal({ onClose, assets, onTrade, preAsset = null }) {
         {/* BUY / SELL toggle */}
         <div style={{display:'flex', gap:6, marginBottom:18}}>
           {[['buy','COMPRA'],['sell','VENTA']].map(([v,label]) => (
-            <button key={v} onClick={() => setOp(v)} style={{
+            <button key={v} onClick={() => {
+              setOp(v);
+              if (v === 'buy' && preAsset) {
+                setName(preAsset.name);
+                setTicker(preAsset.ticker);
+                setAssetType(preAsset.type);
+                setCurrency(preAsset.currency);
+              }
+            }} style={{
               flex:1, padding:'9px 0', borderRadius:8, border:'none', fontWeight:700,
               fontSize:13, cursor:'pointer', fontFamily:"'DM Mono',monospace",
               background: op===v ? (v==='buy' ? 'var(--green)' : '#f87171') : 'var(--surface2)',
