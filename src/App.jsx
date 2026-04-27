@@ -237,12 +237,27 @@ async function fetchStockPrice(ticker) {
 }
 
 async function fetchFxRate() {
+  // Source 1: Frankfurter (BCE)
   try {
     const res = await fetchWithTimeout('https://api.frankfurter.app/latest?from=EUR&to=USD');
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data?.rates?.USD ?? null;
-  } catch { return null; }
+    if (res.ok) {
+      const data = await res.json();
+      const rate = data?.rates?.USD ?? null;
+      if (rate) return rate;
+    }
+  } catch {}
+
+  // Source 2: open.er-api.com (fallback)
+  try {
+    const res = await fetchWithTimeout('https://open.er-api.com/v6/latest/EUR');
+    if (res.ok) {
+      const data = await res.json();
+      const rate = data?.rates?.USD ?? null;
+      if (rate) return rate;
+    }
+  } catch {}
+
+  return null;
 }
 
 const TYPE_META = {
