@@ -1164,18 +1164,21 @@ function Dashboard({ user, onLogout }) {
   const [displayCurrency, setDisplayCurrency] = useState(
     () => localStorage.getItem("display_currency") || "USD"
   );
-  const [fxRate, setFxRate] = useState(
-    () => parseFloat(localStorage.getItem("fx_rate")) || 1.17
-  );
-  const [fxInput, setFxInput] = useState(
-    () => localStorage.getItem("fx_rate") || "1.17"
-  );
+  const [fxRate, setFxRate] = useState(() => {
+    const v = parseFloat(localStorage.getItem("fx_rate"));
+    return (v > 0.5 && v < 5) ? v : 1.17;
+  });
+  const [fxInput, setFxInput] = useState(() => {
+    const v = parseFloat(localStorage.getItem("fx_rate"));
+    return (v > 0.5 && v < 5) ? v.toString() : "1.17";
+  });
   const [editingFx, setEditingFx] = useState(false);
   const [fxAutoUpdated, setFxAutoUpdated] = useState(false);
   const [appLogs, setAppLogs] = useState([]);
   const [showLogs, setShowLogs] = useState(false);
   const [activeTab, setActiveTab] = useState('portfolio');
   const [transactions, setTransactions] = useState([]);
+  const [txSortDir, setTxSortDir] = useState('desc');
   const [showTradeModal, setShowTradeModal] = useState(false);
 
   useEffect(() => {
@@ -1203,9 +1206,10 @@ function Dashboard({ user, onLogout }) {
   }, []);
 
   const toDisplay = (amount, assetCurrency = "USD") => {
-    if (!assetCurrency || assetCurrency === displayCurrency) return amount;
-    if (assetCurrency === "USD" && displayCurrency === "EUR") return amount / fxRate;
-    if (assetCurrency === "EUR" && displayCurrency === "USD") return amount * fxRate;
+    const cur = assetCurrency || "USD"; // tratar null/undefined como USD
+    if (cur === displayCurrency) return amount;
+    if (cur === "USD" && displayCurrency === "EUR") return amount / fxRate;
+    if (cur === "EUR" && displayCurrency === "USD") return amount * fxRate;
     return amount;
   };
 
@@ -1478,11 +1482,25 @@ function Dashboard({ user, onLogout }) {
 
         {activeTab === 'history' && (
           <div>
+            {transactions.length > 0 && (
+              <div style={{display:'flex', justifyContent:'flex-end', marginBottom:12}}>
+                <button
+                  onClick={() => setTxSortDir(d => d === 'desc' ? 'asc' : 'desc')}
+                  style={{background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--fg)', borderRadius:8, padding:'6px 12px', fontSize:11, cursor:'pointer', fontFamily:"'DM Mono',monospace", display:'flex', alignItems:'center', gap:6}}
+                >
+                  {txSortDir === 'desc' ? '↓ Más reciente primero' : '↑ Más antiguo primero'}
+                </button>
+              </div>
+            )}
             {transactions.length === 0 ? (
               <div className="empty">Sin transacciones aún.<br/>Registra una operación con <strong style={{color:'var(--green)'}}>+</strong></div>
             ) : (() => {
+              const sorted = [...transactions].sort((a, b) => {
+                const diff = a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
+                return txSortDir === 'desc' ? -diff : diff;
+              });
               const groups = {};
-              transactions.forEach(tx => {
+              sorted.forEach(tx => {
                 const d = new Date(tx.date + 'T12:00:00');
                 const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
                 const label = d.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
