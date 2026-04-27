@@ -98,6 +98,25 @@ const sb = {
     if (!r.ok) throw new Error("Error al actualizar");
     const data = await r.json();
     return data[0];
+  },
+
+  async getTransactions() {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/transactions?user_id=eq.${this._userId}&order=date.desc,created_at.desc`, {
+      headers: this.headers({ "Prefer": "return=representation" })
+    });
+    if (!r.ok) throw new Error("Error cargando transacciones");
+    return r.json();
+  },
+
+  async addTransaction(tx) {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/transactions`, {
+      method: "POST",
+      headers: this.headers({ "Prefer": "return=representation" }),
+      body: JSON.stringify({ ...tx, user_id: this._userId })
+    });
+    if (!r.ok) { const e = await r.json(); throw new Error(e.message || "Error al guardar transacción"); }
+    const data = await r.json();
+    return data[0];
   }
 };
 
@@ -553,6 +572,36 @@ const styles = `
   .pos { color: var(--green); }
   .neg { color: var(--red); }
 
+  /* ── MAIN TABS (Portafolio / Historial) ── */
+  .main-tabs { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--border); padding-bottom: 2px; }
+  .main-tab {
+    padding: 7px 16px; border-radius: 8px 8px 0 0;
+    font-family: 'DM Mono', monospace; font-size: 12px; font-weight: 600;
+    border: none; cursor: pointer; transition: all 0.15s;
+    background: transparent; color: var(--muted);
+  }
+  .main-tab.active { background: var(--surface2); color: var(--text); border-bottom: 2px solid var(--green); }
+
+  /* ── TRANSACTION ROWS ── */
+  .tx-month { font-size: 10px; color: var(--muted); letter-spacing: 1.5px; text-transform: uppercase; margin: 18px 0 8px; padding-left: 4px; }
+  .tx-row {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px 14px;
+    display: flex; align-items: center; gap: 12px; margin-bottom: 6px;
+  }
+  .tx-badge {
+    font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 6px;
+    flex-shrink: 0; letter-spacing: 0.5px;
+  }
+  .tx-badge.buy { background: rgba(74,222,128,0.15); color: #4ade80; }
+  .tx-badge.sell { background: rgba(248,113,113,0.15); color: #f87171; }
+  .tx-info { flex: 1; min-width: 0; }
+  .tx-name { font-size: 12px; color: var(--text); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tx-meta { font-size: 10px; color: var(--muted); margin-top: 2px; }
+  .tx-amount { text-align: right; flex-shrink: 0; }
+  .tx-total { font-size: 13px; font-weight: 700; color: var(--text); }
+  .tx-date { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
   /* ── BTN ADD ── */
   .btn-add {
     position: fixed; bottom: 24px; right: 20px;
@@ -937,6 +986,162 @@ function AddAssetModal({ onClose, onAdd, onEdit, asset }) {
 }
 
 // ============================================================
+// TRADE MODAL
+// ============================================================
+function TradeModal({ onClose, assets, onTrade, preAsset = null }) {
+  const TRADABLE = assets.filter(a => ['stock','crypto','fund'].includes(a.type));
+  const today = new Date().toISOString().split('T')[0];
+
+  const [op, setOp] = useState(preAsset ? 'sell' : 'buy');
+  const [assetType, setAssetType] = useState('stock');
+  const [name, setName] = useState('');
+  const [ticker, setTicker] = useState('');
+  const [currency, setCurrency] = useState('USD');
+  const [date, setDate] = useState(today);
+  const [quantity, setQuantity] = useState('');
+  const [price, setPrice] = useState('');
+  const [selectedId, setSelectedId] = useState(preAsset?.id ?? TRADABLE[0]?.id ?? '');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const selectedAsset = TRADABLE.find(a => a.id === selectedId);
+  const isBuy = op === 'buy';
+
+  const handleTickerInput = (v) => setTicker(v.toUpperCase().replace(/[^A-Z0-9.\-]/g, ''));
+
+  const handleSubmit = async () => {
+    setError('');
+    const qty = parseFloat(quantity);
+    const prc = parseFloat(price);
+    if (!qty || qty <= 0) return setError('Cantidad inválida');
+    if (!prc || prc <= 0) return setError('Precio inválido');
+    if (!date) return setError('Fecha requerida');
+    if (isBuy) {
+      if (!name.trim()) return setError('Nombre requerido');
+      if (!ticker.trim()) return setError('Ticker requerido');
+    } else {
+      if (!selectedAsset) return setError('Selecciona un activo');
+      if (qty > selectedAsset.quantity) return setError(`Máximo disponible: ${fmt(selectedAsset.quantity, 4)} uds`);
+    }
+    setSaving(true);
+    try {
+      await onTrade({ op, assetType, name: name.trim(), ticker, currency, date, quantity: qty, price: prc, selectedAsset });
+      onClose();
+    } catch(e) { setError(e.message); }
+    finally { setSaving(false); }
+  };
+
+  const inputStyle = { width:'100%', background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--fg)', borderRadius:8, padding:'10px 12px', fontSize:13, fontFamily:"'DM Mono',monospace", boxSizing:'border-box' };
+  const labelStyle = { fontSize:10, color:'var(--muted)', letterSpacing:1, textTransform:'uppercase', display:'block', marginBottom:5 };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2 style={{margin:0, fontSize:16}}>Nueva operación</h2>
+          <button onClick={onClose} style={{background:'none',border:'none',color:'var(--muted)',fontSize:20,cursor:'pointer'}}>✕</button>
+        </div>
+
+        {/* BUY / SELL toggle */}
+        <div style={{display:'flex', gap:6, marginBottom:18}}>
+          {[['buy','COMPRA'],['sell','VENTA']].map(([v,label]) => (
+            <button key={v} onClick={() => setOp(v)} style={{
+              flex:1, padding:'9px 0', borderRadius:8, border:'none', fontWeight:700,
+              fontSize:13, cursor:'pointer', fontFamily:"'DM Mono',monospace",
+              background: op===v ? (v==='buy' ? 'var(--green)' : '#f87171') : 'var(--surface2)',
+              color: op===v ? '#080c10' : 'var(--muted)',
+            }}>{label}</button>
+          ))}
+        </div>
+
+        {isBuy ? (
+          <>
+            {/* Asset type */}
+            <div className="form-group">
+              <label style={labelStyle}>Tipo de activo</label>
+              <select value={assetType} onChange={e => setAssetType(e.target.value)} style={inputStyle}>
+                <option value="stock">Acción</option>
+                <option value="crypto">Crypto</option>
+                <option value="fund">Fondo de inversión</option>
+              </select>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label style={labelStyle}>Nombre</label>
+                <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="Apple Inc." />
+              </div>
+              <div className="form-group">
+                <label style={labelStyle}>Ticker / ISIN</label>
+                <input style={inputStyle} value={ticker} onChange={e => handleTickerInput(e.target.value)} placeholder="AAPL" maxLength={20} />
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label style={labelStyle}>Moneda</label>
+                <select value={currency} onChange={e => setCurrency(e.target.value)} style={inputStyle}>
+                  <option>USD</option><option>EUR</option><option>MXN</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label style={labelStyle}>Fecha</label>
+                <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Sell: select existing position */}
+            <div className="form-group">
+              <label style={labelStyle}>Activo</label>
+              {TRADABLE.length === 0 ? (
+                <div style={{color:'var(--muted)',fontSize:12,padding:10}}>No tienes posiciones de acciones, crypto o fondos.</div>
+              ) : (
+                <select value={selectedId} onChange={e => setSelectedId(e.target.value)} style={inputStyle}>
+                  {TRADABLE.map(a => (
+                    <option key={a.id} value={a.id}>{a.name} ({a.ticker}) — {fmt(a.quantity,4)} uds · {a.currency}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+            {selectedAsset && (
+              <div style={{fontSize:11,color:'var(--muted)',marginBottom:12,padding:'6px 10px',background:'var(--surface2)',borderRadius:8}}>
+                Posición actual: {fmt(selectedAsset.quantity,4)} uds · Coste medio: {fmtMoney(selectedAsset.buy_price, selectedAsset.currency)}
+              </div>
+            )}
+            <div className="form-group">
+              <label style={labelStyle}>Fecha</label>
+              <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+            </div>
+          </>
+        )}
+
+        {/* Quantity & price (common) */}
+        <div className="form-row">
+          <div className="form-group">
+            <label style={labelStyle}>{isBuy ? 'Cantidad' : `Cantidad (máx. ${selectedAsset ? fmt(selectedAsset.quantity,4) : '—'})`}</label>
+            <input type="number" style={inputStyle} value={quantity} onChange={e => setQuantity(e.target.value)}
+              min="0" max={!isBuy && selectedAsset ? selectedAsset.quantity : undefined} step="any" placeholder="10" />
+          </div>
+          <div className="form-group">
+            <label style={labelStyle}>Precio / unidad</label>
+            <input type="number" style={inputStyle} value={price} onChange={e => setPrice(e.target.value)} step="any" placeholder="195.00" />
+          </div>
+        </div>
+
+        {error && <div style={{color:'#f87171',fontSize:12,marginBottom:10}}>{error}</div>}
+
+        <div className="modal-actions">
+          <button className="btn-cancel" onClick={onClose}>Cancelar</button>
+          <button className="btn-primary" onClick={handleSubmit} disabled={saving || (!isBuy && TRADABLE.length===0)}>
+            {saving ? '...' : isBuy ? 'Registrar compra' : 'Registrar venta'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
 // DASHBOARD
 // ============================================================
 function Dashboard({ user, onLogout }) {
@@ -961,6 +1166,9 @@ function Dashboard({ user, onLogout }) {
   const [fxAutoUpdated, setFxAutoUpdated] = useState(false);
   const [appLogs, setAppLogs] = useState([]);
   const [showLogs, setShowLogs] = useState(false);
+  const [activeTab, setActiveTab] = useState('portfolio');
+  const [transactions, setTransactions] = useState([]);
+  const [showTradeModal, setShowTradeModal] = useState(false);
 
   useEffect(() => {
     _pushLog = (entry) => setAppLogs(prev => [entry, ...prev].slice(0, 100));
@@ -1026,8 +1234,9 @@ function Dashboard({ user, onLogout }) {
   const loadAssets = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await sb.getAssets();
-      setAssets(data);
+      const [assetsData, txData] = await Promise.allSettled([sb.getAssets(), sb.getTransactions()]);
+      if (assetsData.status === 'fulfilled') setAssets(assetsData.value);
+      if (txData.status === 'fulfilled') setTransactions(txData.value);
     } catch(e) {
       console.error(e);
     } finally {
@@ -1120,6 +1329,54 @@ function Dashboard({ user, onLogout }) {
     } catch(e) { alert(e.message); }
   };
 
+  const handleTrade = async ({ op, assetType, name, ticker, currency, date, quantity, price, selectedAsset }) => {
+    const txBase = {
+      operation: op,
+      asset_type: op === 'sell' ? selectedAsset.type : assetType,
+      asset_name: op === 'sell' ? selectedAsset.name : name,
+      ticker: op === 'sell' ? selectedAsset.ticker : ticker.toUpperCase(),
+      currency: op === 'sell' ? selectedAsset.currency : currency,
+      quantity,
+      price,
+      date,
+    };
+
+    if (op === 'buy') {
+      const t = txBase.ticker;
+      const existing = assets.find(a => a.type === assetType && a.ticker === t && a.currency === currency);
+      let assetId;
+      if (existing) {
+        const newQty = existing.quantity + quantity;
+        const newBuyPrice = (existing.quantity * existing.buy_price + quantity * price) / newQty;
+        const updated = await sb.updateAsset(existing.id, {
+          quantity: newQty,
+          buy_price: parseFloat(newBuyPrice.toFixed(6)),
+        });
+        setAssets(prev => prev.map(a => a.id === existing.id ? { ...a, ...updated } : a));
+        assetId = existing.id;
+      } else {
+        const saved = await sb.addAsset({ type: assetType, name, ticker: t, currency, quantity, buy_price: price, current_price: price });
+        setAssets(prev => [saved, ...prev]);
+        assetId = saved.id;
+      }
+      const tx = await sb.addTransaction({ ...txBase, asset_id: assetId });
+      setTransactions(prev => [tx, ...prev]);
+    } else {
+      const newQty = parseFloat((selectedAsset.quantity - quantity).toFixed(10));
+      let assetId = selectedAsset.id;
+      if (newQty <= 0) {
+        await sb.deleteAsset(selectedAsset.id);
+        setAssets(prev => prev.filter(a => a.id !== selectedAsset.id));
+        assetId = null;
+      } else {
+        const updated = await sb.updateAsset(selectedAsset.id, { quantity: newQty });
+        setAssets(prev => prev.map(a => a.id === selectedAsset.id ? { ...a, ...updated } : a));
+      }
+      const tx = await sb.addTransaction({ ...txBase, asset_id: assetId });
+      setTransactions(prev => [tx, ...prev]);
+    }
+  };
+
   const handleDelete = async (id) => {
     if (!confirm("¿Eliminar este activo?")) return;
     try {
@@ -1203,6 +1460,57 @@ function Dashboard({ user, onLogout }) {
           </div>
         </div>
 
+        {/* MAIN TABS */}
+        <div className="main-tabs">
+          <button className={`main-tab ${activeTab==='portfolio'?'active':''}`} onClick={() => setActiveTab('portfolio')}>Portafolio</button>
+          <button className={`main-tab ${activeTab==='history'?'active':''}`} onClick={() => setActiveTab('history')}>
+            Historial {transactions.length > 0 && <span style={{fontSize:9,background:'var(--surface)',border:'1px solid var(--border)',borderRadius:10,padding:'1px 6px',marginLeft:4,color:'var(--muted)'}}>{transactions.length}</span>}
+          </button>
+        </div>
+
+        {activeTab === 'history' && (
+          <div>
+            {transactions.length === 0 ? (
+              <div className="empty">Sin transacciones aún.<br/>Registra una operación con <strong style={{color:'var(--green)'}}>+</strong></div>
+            ) : (() => {
+              const groups = {};
+              transactions.forEach(tx => {
+                const d = new Date(tx.date + 'T12:00:00');
+                const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+                const label = d.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+                if (!groups[key]) groups[key] = { label, items: [] };
+                groups[key].items.push(tx);
+              });
+              return Object.entries(groups).map(([key, { label, items }]) => (
+                <div key={key}>
+                  <div className="tx-month">{label}</div>
+                  {items.map(tx => {
+                    const total = tx.quantity * tx.price;
+                    const d = new Date(tx.date + 'T12:00:00');
+                    const dateStr = d.toLocaleDateString('es-ES', { day:'2-digit', month:'2-digit', year:'numeric' });
+                    return (
+                      <div key={tx.id} className="tx-row">
+                        <span className={`tx-badge ${tx.operation==='buy'?'buy':'sell'}`}>{tx.operation==='buy'?'COMPRA':'VENTA'}</span>
+                        <div className="tx-info">
+                          <div className="tx-name">{tx.asset_name}</div>
+                          <div className="tx-meta">{tx.ticker} · {fmt(tx.quantity,4)} uds × {fmtMoney(tx.price, tx.currency)}</div>
+                        </div>
+                        <div className="tx-amount">
+                          <div className="tx-total" style={{color: tx.operation==='buy'?'var(--green)':'#f87171'}}>
+                            {tx.operation==='buy'?'+':'-'}{fmtMoney(total, tx.currency)}
+                          </div>
+                          <div className="tx-date">{dateStr}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ));
+            })()}
+          </div>
+        )}
+
+        {activeTab === 'portfolio' && <>
         {/* PILLS */}
         <div className="pills">
           {Object.entries(TYPE_META).map(([type, meta]) => {
@@ -1290,6 +1598,13 @@ function Dashboard({ user, onLogout }) {
                     &nbsp;({gain >= 0 ? "+" : ""}{fmtMoney(gain, displayCurrency)})
                   </div>
                   <div style={{display:"flex",gap:8,marginTop:4}}>
+                    {ACCUMULABLE_TYPES.includes(asset.type) && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setShowTradeModal({ preAsset: asset }); }}
+                        style={{background:"none",border:"none",color:"var(--muted)",fontSize:15,cursor:"pointer",padding:0}}
+                        title="Nueva operación"
+                      >💼</button>
+                    )}
                     <button
                       onClick={(e) => { e.stopPropagation(); setEditingAsset(asset); }}
                       style={{background:"none",border:"none",color:"var(--muted)",fontSize:16,cursor:"pointer",padding:0}}
@@ -1306,9 +1621,28 @@ function Dashboard({ user, onLogout }) {
             );
           })}
         </div>
+        </>}
       </main>
 
-      <button className="btn-add" onClick={() => setShowModal(true)}>+</button>
+      {/* FAB: opens trade modal; long-press hint for real_estate via secondary button */}
+      <div style={{position:"fixed",bottom:24,right:20,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8,zIndex:150}}>
+        <button
+          onClick={() => setShowModal(true)}
+          title="Añadir inmobiliario"
+          style={{background:"var(--surface2)",border:"1px solid var(--border)",color:"var(--muted)",borderRadius:10,padding:"6px 12px",fontSize:11,cursor:"pointer",fontFamily:"'DM Mono',monospace"}}
+        >+ Inmueble</button>
+        <button className="btn-add" onClick={() => setShowTradeModal(true)}>+</button>
+      </div>
+      {/* Trade modal (compra/venta acciones, crypto, fondos) */}
+      {showTradeModal && (
+        <TradeModal
+          onClose={() => setShowTradeModal(false)}
+          assets={assets}
+          onTrade={handleTrade}
+          preAsset={typeof showTradeModal === 'object' ? showTradeModal.preAsset : null}
+        />
+      )}
+      {/* Add asset modal (inmobiliario + edición directa) */}
       {showModal && <AddAssetModal onClose={() => setShowModal(false)} onAdd={handleAdd} />}
       {editingAsset && <AddAssetModal asset={editingAsset} onClose={() => setEditingAsset(null)} onEdit={handleUpdate} />}
 
