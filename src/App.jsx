@@ -1176,6 +1176,7 @@ function Dashboard({ user, onLogout }) {
   const [showLogs, setShowLogs] = useState(false);
   const [activeTab, setActiveTab] = useState('portfolio');
   const [transactions, setTransactions] = useState([]);
+  const [txSortDir, setTxSortDir] = useState('desc');
   const [showTradeModal, setShowTradeModal] = useState(false);
 
   useEffect(() => {
@@ -1478,11 +1479,25 @@ function Dashboard({ user, onLogout }) {
 
         {activeTab === 'history' && (
           <div>
+            {transactions.length > 0 && (
+              <div style={{display:'flex', justifyContent:'flex-end', marginBottom:12}}>
+                <button
+                  onClick={() => setTxSortDir(d => d === 'desc' ? 'asc' : 'desc')}
+                  style={{background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--fg)', borderRadius:8, padding:'6px 12px', fontSize:11, cursor:'pointer', fontFamily:"'DM Mono',monospace", display:'flex', alignItems:'center', gap:6}}
+                >
+                  {txSortDir === 'desc' ? '↓ Más reciente primero' : '↑ Más antiguo primero'}
+                </button>
+              </div>
+            )}
             {transactions.length === 0 ? (
               <div className="empty">Sin transacciones aún.<br/>Registra una operación con <strong style={{color:'var(--green)'}}>+</strong></div>
             ) : (() => {
+              const sorted = [...transactions].sort((a, b) => {
+                const diff = a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
+                return txSortDir === 'desc' ? -diff : diff;
+              });
               const groups = {};
-              transactions.forEach(tx => {
+              sorted.forEach(tx => {
                 const d = new Date(tx.date + 'T12:00:00');
                 const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
                 const label = d.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
