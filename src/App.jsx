@@ -1272,6 +1272,26 @@ function Dashboard({ user, onLogout }) {
       if (sortBy === "value-asc")  return toDisplay(a.quantity * a.current_price, a.currency) - toDisplay(b.quantity * b.current_price, b.currency);
       if (sortBy === "name-asc")   return a.name.localeCompare(b.name, "es");
       if (sortBy === "name-desc")  return b.name.localeCompare(a.name, "es");
+      const gainA = toDisplay((a.current_price - a.buy_price) * a.quantity, a.currency);
+      const gainB = toDisplay((b.current_price - b.buy_price) * b.quantity, b.currency);
+      if (sortBy === "gain-desc") return gainB - gainA;
+      if (sortBy === "gain-asc")  return gainA - gainB;
+      const roiA = calcROI(a.buy_price, a.current_price);
+      const roiB = calcROI(b.buy_price, b.current_price);
+      if (sortBy === "roi-desc") return roiB - roiA;
+      if (sortBy === "roi-asc")  return roiA - roiB;
+      const valA = toDisplay(a.quantity * a.current_price, a.currency);
+      const valB = toDisplay(b.quantity * b.current_price, b.currency);
+      const pctPortA = totalCurrent > 0 ? valA / totalCurrent : 0;
+      const pctPortB = totalCurrent > 0 ? valB / totalCurrent : 0;
+      if (sortBy === "pct-port-desc") return pctPortB - pctPortA;
+      if (sortBy === "pct-port-asc")  return pctPortA - pctPortB;
+      const classA = typeTotal(a.type);
+      const classB = typeTotal(b.type);
+      const pctClsA = classA > 0 ? valA / classA : 0;
+      const pctClsB = classB > 0 ? valB / classB : 0;
+      if (sortBy === "pct-cls-desc") return pctClsB - pctClsA;
+      if (sortBy === "pct-cls-asc")  return pctClsA - pctClsB;
       return 0;
     });
   })();
@@ -1579,6 +1599,14 @@ function Dashboard({ user, onLogout }) {
             >
               <option value="value-desc">Valor ↓</option>
               <option value="value-asc">Valor ↑</option>
+              <option value="gain-desc">Ganancia ↓</option>
+              <option value="gain-asc">Ganancia ↑</option>
+              <option value="roi-desc">Ganancia % ↓</option>
+              <option value="roi-asc">Ganancia % ↑</option>
+              <option value="pct-port-desc">% Portafolio ↓</option>
+              <option value="pct-port-asc">% Portafolio ↑</option>
+              <option value="pct-cls-desc">% Clase ↓</option>
+              <option value="pct-cls-asc">% Clase ↑</option>
               <option value="name-asc">A → Z</option>
               <option value="name-desc">Z → A</option>
             </select>
