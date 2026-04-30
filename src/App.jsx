@@ -1276,6 +1276,10 @@ function Dashboard({ user, onLogout }) {
       const gainB = toDisplay((b.current_price - b.buy_price) * b.quantity, b.currency);
       if (sortBy === "gain-desc") return gainB - gainA;
       if (sortBy === "gain-asc")  return gainA - gainB;
+      const roiA = calcROI(a.buy_price, a.current_price);
+      const roiB = calcROI(b.buy_price, b.current_price);
+      if (sortBy === "roi-desc") return roiB - roiA;
+      if (sortBy === "roi-asc")  return roiA - roiB;
       const valA = toDisplay(a.quantity * a.current_price, a.currency);
       const valB = toDisplay(b.quantity * b.current_price, b.currency);
       const pctPortA = totalCurrent > 0 ? valA / totalCurrent : 0;
@@ -1597,6 +1601,8 @@ function Dashboard({ user, onLogout }) {
               <option value="value-asc">Valor ↑</option>
               <option value="gain-desc">Ganancia ↓</option>
               <option value="gain-asc">Ganancia ↑</option>
+              <option value="roi-desc">Ganancia % ↓</option>
+              <option value="roi-asc">Ganancia % ↑</option>
               <option value="pct-port-desc">% Portafolio ↓</option>
               <option value="pct-port-asc">% Portafolio ↑</option>
               <option value="pct-cls-desc">% Clase ↓</option>
