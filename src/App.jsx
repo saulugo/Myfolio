@@ -1605,6 +1605,9 @@ function Dashboard({ user, onLogout }) {
             const roi = calcROI(asset.buy_price, asset.current_price);
             const gain = toDisplay((asset.current_price - asset.buy_price) * asset.quantity, asset.currency);
             const displayPrice = toDisplay(asset.current_price, asset.currency);
+            const classTotal = typeTotal(asset.type);
+            const pctPortfolio = totalCurrent > 0 ? (value / totalCurrent * 100) : 0;
+            const pctClass = classTotal > 0 ? (value / classTotal * 100) : 0;
             return (
               <div key={asset.id} className="asset-card" style={{position:"relative"}}>
                 <div className="asset-icon" style={{background: meta.bg}}>{meta.icon}</div>
@@ -1618,6 +1621,11 @@ function Dashboard({ user, onLogout }) {
                     {asset.type !== 'real_estate' && (
                       <span style={{marginLeft:8}}>· Coste medio: {fmtMoney(toDisplay(asset.buy_price, asset.currency), displayCurrency)}</span>
                     )}
+                  </div>
+                  <div style={{fontSize:11, color:"var(--muted)", marginTop:3}}>
+                    <span title="% del portafolio total">Portfolio: <strong style={{color:"var(--fg)"}}>{fmt(pctPortfolio, 1)}%</strong></span>
+                    <span style={{margin:"0 6px"}}>·</span>
+                    <span title={`% dentro de ${meta.label}`}>{meta.label}: <strong style={{color:meta.color}}>{fmt(pctClass, 1)}%</strong></span>
                   </div>
                 </div>
                 <div className="asset-right">
