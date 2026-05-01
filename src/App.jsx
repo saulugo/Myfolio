@@ -1273,7 +1273,7 @@ function Dashboard({ user, onLogout }) {
     if (stockFund.length === 0) return;
     Promise.allSettled(
       stockFund.map(a =>
-        fetchWithTimeout(`/api/stock-price?ticker=${encodeURIComponent(a.ticker)}`)
+        fetchWithTimeout(`/api/stock-dividends?ticker=${encodeURIComponent(a.ticker)}`)
           .then(r => r.json())
           .then(body => ({ id: a.id, dividendRate: body.dividendRate || 0 }))
       )
@@ -1370,15 +1370,18 @@ function Dashboard({ user, onLogout }) {
       // Stocks & funds via Yahoo Finance (parallel)
       const stockAssets = updatable.filter(a => (a.type === 'stock' || a.type === 'fund') && a.ticker);
       const results = await Promise.allSettled(
-        stockAssets.map(a => fetchStockPrice(a.ticker).then(data => ({ id: a.id, price: data?.price, dividendRate: data?.dividendRate })))
+        stockAssets.map(a => fetchStockPrice(a.ticker).then(data => ({ id: a.id, price: data?.price })))
+      );
+      results.forEach(r => { if (r.status === 'fulfilled' && r.value.price != null) newPrices[r.value.id] = r.value.price; });
+      // Fetch dividends in parallel via dedicated endpoint (quoteSummary, more reliable)
+      const divResults = await Promise.allSettled(
+        stockAssets.map(a =>
+          fetchWithTimeout(`/api/stock-dividends?ticker=${encodeURIComponent(a.ticker)}`)
+            .then(r => r.json()).then(body => ({ id: a.id, dividendRate: body.dividendRate || 0 }))
+        )
       );
       const newDividends = {};
-      results.forEach(r => {
-        if (r.status === 'fulfilled' && r.value.price != null) {
-          newPrices[r.value.id] = r.value.price;
-          if (r.value.dividendRate > 0) newDividends[r.value.id] = r.value.dividendRate;
-        }
-      });
+      divResults.forEach(r => { if (r.status === 'fulfilled' && r.value.dividendRate > 0) newDividends[r.value.id] = r.value.dividendRate; });
       setDividendRates(prev => ({ ...prev, ...newDividends }));
       // Persist to Supabase and update local state
       const updates = Object.entries(newPrices);
