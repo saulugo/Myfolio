@@ -1725,6 +1725,8 @@ function Dashboard({ user, onLogout }) {
             const pctClass = classTotal > 0 ? (value / classTotal * 100) : 0;
             const dividendRate = dividendRates[asset.id] || 0;
             const yieldOnCost = dividendRate > 0 && asset.buy_price > 0 ? (dividendRate / asset.buy_price * 100) : 0;
+            const reYield = asset.type === 'real_estate' && asset.buy_price > 0 && asset.net_income > 0
+              ? (asset.net_income * 12) / asset.buy_price * 100 : 0;
             return (
               <div key={asset.id} className="asset-card" style={{position:"relative"}}>
                 <div className="asset-icon" style={{background: meta.bg}}>{meta.icon}</div>
@@ -1749,6 +1751,13 @@ function Dashboard({ user, onLogout }) {
                       <span>Div: <strong style={{color:"var(--green)"}}>{fmtMoney(toDisplay(dividendRate, asset.currency), displayCurrency)}/año</strong></span>
                       <span style={{margin:"0 6px"}}>·</span>
                       <span title="Yield sobre coste medio de compra">Yield s/coste: <strong style={{color:"var(--green)"}}>{fmt(yieldOnCost, 2)}%</strong></span>
+                    </div>
+                  )}
+                  {reYield > 0 && (
+                    <div style={{fontSize:11, color:"var(--muted)", marginTop:3}}>
+                      <span>Renta neta: <strong style={{color:"var(--blue)"}}>{fmtMoney(toDisplay(asset.net_income * 12, asset.currency), displayCurrency)}/año</strong></span>
+                      <span style={{margin:"0 6px"}}>·</span>
+                      <span title="Yield = renta neta anual / coste de adquisición">Yield: <strong style={{color:"var(--blue)"}}>{fmt(reYield, 2)}%</strong></span>
                     </div>
                   )}
                 </div>
