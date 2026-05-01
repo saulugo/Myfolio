@@ -1267,6 +1267,23 @@ function Dashboard({ user, onLogout }) {
 
   useEffect(() => { loadAssets(); }, [loadAssets]);
 
+  // Fetch dividend rates silently in background after assets load
+  useEffect(() => {
+    const stockFund = assets.filter(a => (a.type === 'stock' || a.type === 'fund') && a.ticker);
+    if (stockFund.length === 0) return;
+    Promise.allSettled(
+      stockFund.map(a =>
+        fetchWithTimeout(`/api/stock-price?ticker=${encodeURIComponent(a.ticker)}`)
+          .then(r => r.json())
+          .then(body => ({ id: a.id, dividendRate: body.dividendRate || 0 }))
+      )
+    ).then(results => {
+      const rates = {};
+      results.forEach(r => { if (r.status === 'fulfilled' && r.value.dividendRate > 0) rates[r.value.id] = r.value.dividendRate; });
+      if (Object.keys(rates).length > 0) setDividendRates(rates);
+    });
+  }, [assets.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const loadNews = useCallback(async () => {
     const tickers = [...new Set(
       assets
