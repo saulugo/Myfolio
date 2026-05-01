@@ -26,8 +26,12 @@ async function fetchPrice(ticker) {
       const res = await fetch(url, { headers });
       if (!res.ok) continue;
       const data = await res.json();
-      const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice;
-      if (price != null) return price;
+      const meta = data?.chart?.result?.[0]?.meta;
+      const price = meta?.regularMarketPrice;
+      if (price != null) {
+        const dividendRate = meta?.dividendRate || meta?.trailingAnnualDividendRate || 0;
+        return { price, dividendRate };
+      }
     } catch {}
   }
   return null;
@@ -48,8 +52,8 @@ export default async function handler(req, res) {
     }
   }
 
-  const price = await fetchPrice(resolvedTicker);
-  if (price != null) return res.json({ price, resolvedTicker: resolvedTicker !== ticker ? resolvedTicker : undefined });
+  const result = await fetchPrice(resolvedTicker);
+  if (result != null) return res.json({ price: result.price, dividendRate: result.dividendRate || undefined, resolvedTicker: resolvedTicker !== ticker ? resolvedTicker : undefined });
 
   res.status(502).json({ error: `Could not fetch price for ${resolvedTicker}` });
 }
