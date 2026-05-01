@@ -198,7 +198,11 @@ async function fetchCryptoPrices(assets) {
 
 async function fetchStockPrice(ticker) {
   const yUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`;
-  const extractPrice = d => d?.chart?.result?.[0]?.meta?.regularMarketPrice ?? null;
+  const extractData = d => {
+    const meta = d?.chart?.result?.[0]?.meta;
+    if (meta?.regularMarketPrice == null) return null;
+    return { price: meta.regularMarketPrice, dividendRate: meta.dividendRate || meta.trailingAnnualDividendRate || 0 };
+  };
 
   const proxies = [
     {
@@ -208,16 +212,12 @@ async function fetchStockPrice(ticker) {
         if (!res.ok) return null;
         const body = await res.json();
         if (body.resolvedTicker) logger.info(`${ticker} es ISIN → resuelto a ticker ${body.resolvedTicker}`);
-        return body.price ?? null;
+        return body.price != null ? { price: body.price, dividendRate: body.dividendRate || 0 } : null;
       },
     },
     {
       name: 'corsproxy.io',
-      run: async () => {
-        const res = await fetchWithTimeout(`https://corsproxy.io/?url=${encodeURIComponent(yUrl)}`);
-        if (!res.ok) return null;
-        return extractPrice(await res.json());
-      },
+      run: async () => extractData(await (await fetchWithTimeout(`https://corsproxy.io/?url=${encodeURIComponent(yUrl)}`)).json()),
     },
     {
       name: 'allorigins.win',
@@ -225,25 +225,21 @@ async function fetchStockPrice(ticker) {
         const res = await fetchWithTimeout(`https://api.allorigins.win/get?url=${encodeURIComponent(yUrl)}`);
         if (!res.ok) return null;
         const w = await res.json();
-        return extractPrice(JSON.parse(w.contents));
+        return extractData(JSON.parse(w.contents));
       },
     },
     {
       name: 'codetabs.com',
-      run: async () => {
-        const res = await fetchWithTimeout(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yUrl)}`);
-        if (!res.ok) return null;
-        return extractPrice(await res.json());
-      },
+      run: async () => extractData(await (await fetchWithTimeout(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(yUrl)}`)).json()),
     },
   ];
 
   for (const proxy of proxies) {
     try {
-      const price = await proxy.run();
-      if (price != null) {
-        logger.info(`${ticker}: ${price} USD/EUR (vía ${proxy.name})`);
-        return price;
+      const data = await proxy.run();
+      if (data?.price != null) {
+        logger.info(`${ticker}: ${data.price} USD/EUR (vía ${proxy.name})`);
+        return data;
       }
       logger.warn(`${ticker}: ${proxy.name} no devolvió precio`);
     } catch (e) {
@@ -827,7 +823,8 @@ function AddAssetModal({ onClose, onAdd, onEdit, asset }) {
         const data = await res.json();
         price = data[cgId]?.[cur] ?? null;
       } else {
-        price = await fetchStockPrice(form.ticker);
+        const stockData = await fetchStockPrice(form.ticker);
+        price = stockData?.price ?? null;
       }
       if (price != null) set("current_price", price);
       else alert("No se pudo obtener el precio. Verifica el ticker.");
@@ -1187,6 +1184,7 @@ function Dashboard({ user, onLogout }) {
   const [transactions, setTransactions] = useState([]);
   const [txSortDir, setTxSortDir] = useState('desc');
   const [showTradeModal, setShowTradeModal] = useState(false);
+  const [dividendRates, setDividendRates] = useState({});
   const [news, setNews] = useState([]);
   const [newsLoading, setNewsLoading] = useState(false);
   const [newsLoaded, setNewsLoaded] = useState(false);
@@ -1355,9 +1353,16 @@ function Dashboard({ user, onLogout }) {
       // Stocks & funds via Yahoo Finance (parallel)
       const stockAssets = updatable.filter(a => (a.type === 'stock' || a.type === 'fund') && a.ticker);
       const results = await Promise.allSettled(
-        stockAssets.map(a => fetchStockPrice(a.ticker).then(price => ({ id: a.id, price })))
+        stockAssets.map(a => fetchStockPrice(a.ticker).then(data => ({ id: a.id, price: data?.price, dividendRate: data?.dividendRate })))
       );
-      results.forEach(r => { if (r.status === 'fulfilled' && r.value.price != null) newPrices[r.value.id] = r.value.price; });
+      const newDividends = {};
+      results.forEach(r => {
+        if (r.status === 'fulfilled' && r.value.price != null) {
+          newPrices[r.value.id] = r.value.price;
+          if (r.value.dividendRate > 0) newDividends[r.value.id] = r.value.dividendRate;
+        }
+      });
+      setDividendRates(prev => ({ ...prev, ...newDividends }));
       // Persist to Supabase and update local state
       const updates = Object.entries(newPrices);
       if (!updates.length) {
@@ -1718,6 +1723,10 @@ function Dashboard({ user, onLogout }) {
             const classTotal = typeTotal(asset.type);
             const pctPortfolio = totalCurrent > 0 ? (value / totalCurrent * 100) : 0;
             const pctClass = classTotal > 0 ? (value / classTotal * 100) : 0;
+            const dividendRate = dividendRates[asset.id] || 0;
+            const yieldOnCost = dividendRate > 0 && asset.buy_price > 0 ? (dividendRate / asset.buy_price * 100) : 0;
+            const reYield = asset.type === 'real_estate' && asset.buy_price > 0 && asset.net_income > 0
+              ? (asset.net_income * 12) / asset.buy_price * 100 : 0;
             return (
               <div key={asset.id} className="asset-card" style={{position:"relative"}}>
                 <div className="asset-icon" style={{background: meta.bg}}>{meta.icon}</div>
@@ -1737,6 +1746,20 @@ function Dashboard({ user, onLogout }) {
                     <span style={{margin:"0 6px"}}>·</span>
                     <span title={`% dentro de ${meta.label}`}>{meta.label}: <strong style={{color:meta.color}}>{fmt(pctClass, 1)}%</strong></span>
                   </div>
+                  {dividendRate > 0 && (
+                    <div style={{fontSize:11, color:"var(--muted)", marginTop:3}}>
+                      <span>Div: <strong style={{color:"var(--green)"}}>{fmtMoney(toDisplay(dividendRate, asset.currency), displayCurrency)}/año</strong></span>
+                      <span style={{margin:"0 6px"}}>·</span>
+                      <span title="Yield sobre coste medio de compra">Yield s/coste: <strong style={{color:"var(--green)"}}>{fmt(yieldOnCost, 2)}%</strong></span>
+                    </div>
+                  )}
+                  {reYield > 0 && (
+                    <div style={{fontSize:11, color:"var(--muted)", marginTop:3}}>
+                      <span>Renta neta: <strong style={{color:"var(--blue)"}}>{fmtMoney(toDisplay(asset.net_income * 12, asset.currency), displayCurrency)}/año</strong></span>
+                      <span style={{margin:"0 6px"}}>·</span>
+                      <span title="Yield = renta neta anual / coste de adquisición">Yield: <strong style={{color:"var(--blue)"}}>{fmt(reYield, 2)}%</strong></span>
+                    </div>
+                  )}
                 </div>
                 <div className="asset-right">
                   <div className="asset-value">{fmtMoney(value, displayCurrency)}</div>
