@@ -1275,7 +1275,12 @@ function Dashboard({ user, onLogout }) {
       stockFund.map(a =>
         fetchWithTimeout(`/api/stock-dividends?ticker=${encodeURIComponent(a.ticker)}`)
           .then(r => r.json())
-          .then(body => ({ id: a.id, dividendRate: body.dividendRate || 0 }))
+          .then(body => {
+            const rate = body.dividendRate || 0;
+            if (rate > 0) logger.info(`${a.ticker}: dividendo ${rate.toFixed(2)}/año`);
+            else logger.info(`${a.ticker}: sin dividendo`);
+            return { id: a.id, dividendRate: rate };
+          })
       )
     ).then(results => {
       const rates = {};
