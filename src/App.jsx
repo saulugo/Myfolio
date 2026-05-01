@@ -297,6 +297,13 @@ const fmtMoney = (n, currency = "USD") =>
 
 const calcROI = (buy, current) => ((current - buy) / buy) * 100;
 
+const relativeTime = (ts) => {
+  const diff = Math.floor(Date.now() / 1000) - ts;
+  if (diff < 3600)  return `hace ${Math.floor(diff / 60)} min`;
+  if (diff < 86400) return `hace ${Math.floor(diff / 3600)} h`;
+  return `hace ${Math.floor(diff / 86400)} d`;
+};
+
 // ============================================================
 // STYLES
 // ============================================================
@@ -1180,6 +1187,9 @@ function Dashboard({ user, onLogout }) {
   const [transactions, setTransactions] = useState([]);
   const [txSortDir, setTxSortDir] = useState('desc');
   const [showTradeModal, setShowTradeModal] = useState(false);
+  const [news, setNews] = useState([]);
+  const [newsLoading, setNewsLoading] = useState(false);
+  const [newsLoaded, setNewsLoaded] = useState(false);
 
   useEffect(() => {
     _pushLog = (entry) => setAppLogs(prev => [entry, ...prev].slice(0, 100));
@@ -1249,6 +1259,7 @@ function Dashboard({ user, onLogout }) {
       const [assetsData, txData] = await Promise.allSettled([sb.getAssets(), sb.getTransactions()]);
       if (assetsData.status === 'fulfilled') setAssets(assetsData.value);
       if (txData.status === 'fulfilled') setTransactions(txData.value);
+      setNewsLoaded(false); // forzar recarga de noticias con los nuevos assets
     } catch(e) {
       console.error(e);
     } finally {
@@ -1257,6 +1268,38 @@ function Dashboard({ user, onLogout }) {
   }, []);
 
   useEffect(() => { loadAssets(); }, [loadAssets]);
+
+  const loadNews = useCallback(async () => {
+    const tickers = [...new Set(
+      assets
+        .filter(a => ['stock', 'fund', 'crypto'].includes(a.type))
+        .map(a => a.ticker)
+    )];
+    if (tickers.length === 0) { setNewsLoaded(true); return; }
+    setNewsLoading(true);
+    try {
+      const results = await Promise.allSettled(
+        tickers.map(t => fetchWithTimeout(`/api/stock-news?ticker=${encodeURIComponent(t)}`).then(r => r.json()))
+      );
+      const seen = new Set();
+      const merged = [];
+      for (const r of results) {
+        if (r.status !== 'fulfilled') continue;
+        for (const item of r.value.news ?? []) {
+          if (!seen.has(item.uuid)) { seen.add(item.uuid); merged.push(item); }
+        }
+      }
+      merged.sort((a, b) => b.publishedAt - a.publishedAt);
+      setNews(merged);
+    } finally {
+      setNewsLoading(false);
+      setNewsLoaded(true);
+    }
+  }, [assets]);
+
+  useEffect(() => {
+    if (activeTab === 'news' && !newsLoaded && assets.length > 0) loadNews();
+  }, [activeTab, newsLoaded, assets, loadNews]);
 
   const totalCurrent = assets.reduce((s, a) => s + toDisplay(a.quantity * a.current_price, a.currency), 0);
   const totalInvested = assets.reduce((s, a) => s + toDisplay(a.quantity * a.buy_price, a.currency), 0);
@@ -1498,6 +1541,7 @@ function Dashboard({ user, onLogout }) {
           <button className={`main-tab ${activeTab==='history'?'active':''}`} onClick={() => setActiveTab('history')}>
             Historial {transactions.length > 0 && <span style={{fontSize:9,background:'var(--surface)',border:'1px solid var(--border)',borderRadius:10,padding:'1px 6px',marginLeft:4,color:'var(--muted)'}}>{transactions.length}</span>}
           </button>
+          <button className={`main-tab ${activeTab==='news'?'active':''}`} onClick={() => setActiveTab('news')}>Noticias</button>
         </div>
 
         {activeTab === 'history' && (
@@ -1553,6 +1597,40 @@ function Dashboard({ user, onLogout }) {
                 </div>
               ));
             })()}
+          </div>
+        )}
+
+        {activeTab === 'news' && (
+          <div>
+            {newsLoading ? (
+              <div className="empty">Cargando noticias...</div>
+            ) : newsLoaded && news.length === 0 ? (
+              <div className="empty">Sin noticias disponibles.</div>
+            ) : (
+              <>
+                <div style={{display:'flex', justifyContent:'flex-end', marginBottom:12}}>
+                  <button
+                    onClick={() => setNewsLoaded(false)}
+                    style={{background:'var(--surface2)', border:'1px solid var(--border)', color:'var(--muted)', borderRadius:8, padding:'6px 12px', fontSize:11, cursor:'pointer', fontFamily:"'DM Mono',monospace"}}
+                  >🔄 Actualizar</button>
+                </div>
+                {news.map(item => (
+                  <a key={item.uuid} href={item.link} target="_blank" rel="noopener noreferrer"
+                     style={{textDecoration:'none', color:'inherit', display:'block', marginBottom:10}}>
+                    <div className="asset-card" style={{flexDirection:'column', alignItems:'flex-start', gap:6}}>
+                      <div style={{display:'flex', gap:6, alignItems:'center', width:'100%', flexWrap:'wrap'}}>
+                        {item.relatedTickers.slice(0,3).map(t => (
+                          <span key={t} style={{fontSize:9, background:'var(--surface2)', border:'1px solid var(--border)', borderRadius:6, padding:'2px 6px', color:'var(--muted)'}}>{t}</span>
+                        ))}
+                        <span style={{fontSize:10, color:'var(--muted)', marginLeft:'auto'}}>{relativeTime(item.publishedAt)}</span>
+                      </div>
+                      <div style={{fontSize:13, color:'var(--fg)', fontWeight:600, lineHeight:1.4}}>{item.title}</div>
+                      <div style={{fontSize:11, color:'var(--muted)'}}>{item.publisher}</div>
+                    </div>
+                  </a>
+                ))}
+              </>
+            )}
           </div>
         )}
 
