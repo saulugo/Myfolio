@@ -1290,7 +1290,11 @@ function Dashboard({ user, onLogout }) {
         }
       }
       merged.sort((a, b) => b.publishedAt - a.publishedAt);
-      setNews(merged);
+      const portfolioTickers = new Set(tickers.map(t => t.toUpperCase()));
+      const filtered = merged.filter(item =>
+        item.relatedTickers.some(t => portfolioTickers.has(t.toUpperCase()))
+      );
+      setNews(filtered);
     } finally {
       setNewsLoading(false);
       setNewsLoaded(true);
