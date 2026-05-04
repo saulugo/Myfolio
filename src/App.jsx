@@ -1275,7 +1275,12 @@ function Dashboard({ user, onLogout }) {
       stockFund.map(a =>
         fetchWithTimeout(`/api/stock-dividends?ticker=${encodeURIComponent(a.ticker)}`)
           .then(r => r.json())
-          .then(body => ({ id: a.id, dividendRate: body.dividendRate || 0 }))
+          .then(body => {
+            const rate = body.dividendRate || 0;
+            if (rate > 0) logger.info(`${a.ticker}: dividendo ${rate.toFixed(2)}/año`);
+            else logger.info(`${a.ticker}: sin dividendo`);
+            return { id: a.id, dividendRate: rate };
+          })
       )
     ).then(results => {
       const rates = {};
@@ -1456,15 +1461,20 @@ function Dashboard({ user, onLogout }) {
           quantity: newQty,
           buy_price: parseFloat(newBuyPrice.toFixed(6)),
         });
+        if (!updated) throw new Error('No se pudo actualizar la posición. Recarga e inténtalo de nuevo.');
         setAssets(prev => prev.map(a => a.id === existing.id ? { ...a, ...updated } : a));
         assetId = existing.id;
+        logger.info(`Compra acumulada: ${t} +${quantity} uds → total ${newQty.toFixed(4)}`);
       } else {
         const saved = await sb.addAsset({ type: assetType, name, ticker: t, currency, quantity, buy_price: price, current_price: price });
+        if (!saved?.id) throw new Error('No se pudo crear la posición. Comprueba los datos e inténtalo de nuevo.');
         setAssets(prev => [saved, ...prev]);
         assetId = saved.id;
+        logger.info(`Nueva posición creada: ${t} (${assetType})`);
       }
       const tx = await sb.addTransaction({ ...txBase, asset_id: assetId });
       setTransactions(prev => [tx, ...prev]);
+      logger.info(`Operación registrada: COMPRA ${t} ${quantity} uds × ${price} ${currency}`);
     } else {
       const newQty = parseFloat((selectedAsset.quantity - quantity).toFixed(10));
       let assetId = selectedAsset.id;
@@ -1478,6 +1488,7 @@ function Dashboard({ user, onLogout }) {
       }
       const tx = await sb.addTransaction({ ...txBase, asset_id: assetId });
       setTransactions(prev => [tx, ...prev]);
+      logger.info(`Operación registrada: VENTA ${txBase.ticker} ${quantity} uds × ${price} ${currency}`);
     }
   };
 
@@ -1814,14 +1825,9 @@ function Dashboard({ user, onLogout }) {
         </>}
       </main>
 
-      {/* FAB: opens trade modal; long-press hint for real_estate via secondary button */}
-      <div style={{position:"fixed",bottom:24,right:20,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8,zIndex:150}}>
-        <button
-          onClick={() => setShowModal(true)}
-          title="Añadir inmobiliario"
-          style={{background:"var(--surface2)",border:"1px solid var(--border)",color:"var(--muted)",borderRadius:10,padding:"6px 12px",fontSize:11,cursor:"pointer",fontFamily:"'DM Mono',monospace"}}
-        >+ Inmueble</button>
-        <button className="btn-add" onClick={() => setShowTradeModal(true)}>+</button>
+      {/* FAB: opens AddAssetModal (all types: stocks, crypto, funds, real estate) */}
+      <div style={{position:"fixed",bottom:24,right:20,zIndex:150}}>
+        <button className="btn-add" onClick={() => setShowModal(true)}>+</button>
       </div>
       {/* Trade modal (compra/venta acciones, crypto, fondos) */}
       {showTradeModal && (
