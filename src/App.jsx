@@ -992,12 +992,12 @@ function AddAssetModal({ onClose, onAdd, onEdit, asset }) {
 // ============================================================
 // TRADE MODAL
 // ============================================================
-function TradeModal({ onClose, assets, onTrade, preAsset = null }) {
+function TradeModal({ onClose, assets, onTrade, preAsset = null, preType = 'stock' }) {
   const TRADABLE = assets.filter(a => ['stock','crypto','fund'].includes(a.type));
   const today = new Date().toISOString().split('T')[0];
 
   const [op, setOp] = useState(preAsset ? 'sell' : 'buy');
-  const [assetType, setAssetType] = useState('stock');
+  const [assetType, setAssetType] = useState(preType);
   const [name, setName] = useState('');
   const [ticker, setTicker] = useState('');
   const [currency, setCurrency] = useState('USD');
@@ -1162,6 +1162,7 @@ function Dashboard({ user, onLogout }) {
   const [filter, setFilter] = useState("all");
   const [sortBy, setSortBy] = useState("value-desc");
   const [showModal, setShowModal] = useState(false);
+  const [showTypePicker, setShowTypePicker] = useState(false);
   const [editingAsset, setEditingAsset] = useState(null);
   const [updatingPrices, setUpdatingPrices] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
@@ -1825,10 +1826,32 @@ function Dashboard({ user, onLogout }) {
         </>}
       </main>
 
-      {/* FAB: opens AddAssetModal (all types: stocks, crypto, funds, real estate) */}
+      {/* FAB */}
       <div style={{position:"fixed",bottom:24,right:20,zIndex:150}}>
-        <button className="btn-add" onClick={() => setShowModal(true)}>+</button>
+        <button className="btn-add" onClick={() => setShowTypePicker(true)}>+</button>
       </div>
+
+      {/* Type picker — routes to TradeModal or AddAssetModal */}
+      {showTypePicker && (
+        <div className="modal-overlay" onClick={e => e.target===e.currentTarget && setShowTypePicker(false)}>
+          <div className="modal" style={{maxWidth:320}}>
+            <div className="modal-title">¿Qué quieres añadir?</div>
+            <div style={{display:'flex',flexDirection:'column',gap:10,marginTop:12}}>
+              {[['stock','📈','Acción'],['crypto','₿','Crypto'],['fund','🏦','Fondo de inversión'],['real_estate','🏢','Inmobiliario']].map(([type,icon,label]) => (
+                <button key={type} onClick={() => {
+                  setShowTypePicker(false);
+                  if (type === 'real_estate') setShowModal(true);
+                  else setShowTradeModal({ preType: type });
+                }} style={{padding:'14px 16px',borderRadius:10,border:'1px solid var(--border)',background:'var(--surface2)',color:'var(--fg)',fontSize:14,cursor:'pointer',textAlign:'left',fontFamily:"'DM Mono',monospace",display:'flex',alignItems:'center',gap:12}}>
+                  <span style={{fontSize:22}}>{icon}</span><span>{label}</span>
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setShowTypePicker(false)} style={{marginTop:16,width:'100%',padding:'10px 0',borderRadius:8,border:'none',background:'var(--surface2)',color:'var(--muted)',cursor:'pointer',fontFamily:"'DM Mono',monospace",fontSize:13}}>Cancelar</button>
+          </div>
+        </div>
+      )}
+
       {/* Trade modal (compra/venta acciones, crypto, fondos) */}
       {showTradeModal && (
         <TradeModal
@@ -1836,6 +1859,7 @@ function Dashboard({ user, onLogout }) {
           assets={assets}
           onTrade={handleTrade}
           preAsset={typeof showTradeModal === 'object' ? showTradeModal.preAsset : null}
+          preType={typeof showTradeModal === 'object' ? (showTradeModal.preType || 'stock') : 'stock'}
         />
       )}
       {/* Add asset modal (inmobiliario + edición directa) */}
